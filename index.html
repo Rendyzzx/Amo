@@ -98,6 +98,12 @@
 </head>
 <body class="min-h-screen text-white flex flex-col justify-between items-center p-4 sm:p-6 relative">
 
+    <!-- BANNER PERINGATAN / PENGUMUMAN (dikontrol lewat bot Telegram) -->
+    <div id="site-warning-banner" class="hidden w-full max-w-md md:max-w-lg lg:max-w-xl mb-3 border-2.5 border-black rounded-xl p-3 px-4 nb-shadow font-bold text-sm flex items-start gap-2">
+        <span id="site-warning-icon" class="text-lg leading-none"></span>
+        <span id="site-warning-text" class="flex-1"></span>
+    </div>
+
     <!-- HEADER / BRANDING WITH OFFICIAL ALIGHT MOTION LOGO -->
     <header class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-3 mb-4 text-center">
         <div class="inline-flex items-center gap-3 bg-darkcard border-2.5 border-black rounded-2xl p-3 px-5 nb-shadow mb-2">
@@ -1547,6 +1553,33 @@
 
         // Initialize default tutorial mode content
         updateTutorialContent('pribadi');
+
+        // ---- Banner peringatan/pengumuman dari Telegram bot ----
+        (async function loadSiteWarning() {
+            try {
+                const res = await axios.get('/api/status');
+                const warning = res.data && res.data.warning;
+                if (!warning || !warning.active || !warning.message) return;
+
+                const banner = document.getElementById('site-warning-banner');
+                const iconEl = document.getElementById('site-warning-icon');
+                const textEl = document.getElementById('site-warning-text');
+
+                const styles = {
+                    info:    { bg: 'bg-sky-500',    icon: 'ℹ️' },
+                    warning: { bg: 'bg-cyberYellow text-black', icon: '⚠️' },
+                    danger:  { bg: 'bg-red-600',     icon: '🚨' }
+                };
+                const style = styles[warning.type] || styles.info;
+
+                banner.classList.remove('hidden');
+                banner.classList.add(...style.bg.split(' '));
+                iconEl.textContent = style.icon;
+                textEl.textContent = warning.message;
+            } catch (e) {
+                // Diam aja kalau gagal ambil status, jangan ganggu tampilan utama.
+            }
+        })();
     </script>
 </body>
 </html>
