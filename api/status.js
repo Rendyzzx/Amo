@@ -1,6 +1,6 @@
 // Endpoint publik (dipanggil dari frontend index.html) untuk ambil status
-// banner peringatan/pengumuman terbaru yang diatur lewat bot Telegram
-// (perintah /warn dan /clearwarn di api/bot.js).
+// banner peringatan/pengumuman dan status maintenance terbaru yang diatur lewat bot Telegram
+// (perintah /maintenance, /unmaintenance, /warn, dan /clearwarn di api/bot.js).
 
 import { getWarningFile } from './_lib/github.js';
 import { notifyError } from './_lib/telegram.js';
@@ -14,10 +14,20 @@ export default async function handler(req, res) {
     const { warning } = await getWarningFile();
     // Cache singkat di edge/CDN biar gak nembak GitHub API tiap request visitor.
     res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30');
-    return res.status(200).json({ success: true, warning });
+    return res.status(200).json({
+      success: true,
+      warning,
+      maintenance: !!(warning && warning.maintenance),
+      maintenanceMessage: (warning && warning.maintenanceMessage) || 'Website sedang dalam pemeliharaan (maintenance).'
+    });
   } catch (e) {
     await notifyError(req, { action: 'Ambil Status Banner Website', error: e });
-    // Kalau gagal ambil, anggap saja tidak ada warning aktif (jangan bikin web down).
-    return res.status(200).json({ success: true, warning: { active: false } });
+    // Kalau gagal ambil, anggap saja tidak ada warning/maintenance aktif (jangan bikin web down).
+    return res.status(200).json({
+      success: true,
+      warning: { active: false },
+      maintenance: false,
+      maintenanceMessage: ''
+    });
   }
 }
