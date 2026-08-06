@@ -1,6 +1,7 @@
 // Helper baca & tulis file JSON di repo GitHub (Contents API).
-// Dipakai untuk tokens.json (kelola token seller) dan warning.json (banner
-// peringatan di website).
+// Dipakai untuk tokens.json (kelola token seller) dan warning.json (konfigurasi
+// umum website: banner peringatan, maintenance, branding, warna, kontak,
+// promo, mode aktivasi, admin tambahan, dll — semuanya dikontrol dari bot Telegram).
 //
 // Env var yang dibutuhkan:
 //   GITHUB_TOKENS_PATH  = username/repo/branch/path/ke/tokens.json
@@ -95,6 +96,32 @@ async function saveJsonFile({ owner, repo, branch, filePath }, jsonObj, sha, com
   return data.content.sha;
 }
 
+// Deep-merge dangkal khusus buat objek config: field yang ada di `data`
+// menimpa default, tapi field baru yang belum pernah disimpan tetap ada
+// (biar nambah fitur baru gak bikin config lama korup).
+function deepMerge(defaults, data) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return data === undefined ? defaults : data;
+  }
+  const out = { ...defaults };
+  for (const key of Object.keys(defaults)) {
+    if (data[key] === undefined) continue;
+    if (
+      typeof defaults[key] === 'object' && defaults[key] !== null && !Array.isArray(defaults[key]) &&
+      typeof data[key] === 'object' && data[key] !== null && !Array.isArray(data[key])
+    ) {
+      out[key] = deepMerge(defaults[key], data[key]);
+    } else {
+      out[key] = data[key];
+    }
+  }
+  // Simpan juga field ekstra yang mungkin sudah ada di data tapi belum ada di defaults
+  for (const key of Object.keys(data)) {
+    if (!(key in out)) out[key] = data[key];
+  }
+  return out;
+}
+
 // ---- Wrapper khusus tokens.json ----
 
 function normalizeLegacyTokens(arr) {
@@ -113,14 +140,69 @@ async function saveTokensFile(tokens, sha, commitMessage) {
   return saveJsonFile(loc, { tokens }, sha, commitMessage);
 }
 
-// ---- Wrapper khusus warning.json (banner peringatan website) ----
+// ---- Wrapper khusus warning.json (config umum website) ----
+// Ini satu file JSON tunggal yang menyimpan SEMUA yang bisa diatur lewat bot:
+// banner, maintenance, admin tambahan, dan seluruh tampilan/konten website
+// (branding, warna, kontak, promo, FAQ, mode aktivasi, dll).
 
-const DEFAULT_WARNING = { active: false, type: 'info', message: '', updatedAt: null };
+const DEFAULT_WARNING = {
+  // Banner peringatan/pengumuman
+  active: false,
+  type: 'info',
+  message: '',
+  updatedAt: null,
+
+  // Mode maintenance
+  maintenance: false,
+  maintenanceMessage: '',
+
+  // Admin tambahan bot (di luar TELEGRAM_ADMIN_IDS di env)
+  admins: [],
+
+  // Konfigurasi tampilan & konten website, dikontrol via bot Telegram
+  site: {
+    brandName: 'ALIGHT',
+    brandBadge: 'PRO',
+    tagline: 'Layanan Aktivasi Premium',
+    footerText: 'Created by <strong>AKIRA</strong>',
+    pageTitle: 'Alight Motion Premium — By Akira',
+    faviconUrl: '',
+    logoUrl: '',
+
+    // Tema warna (CSS variables — lihat index.html)
+    primaryColor: '#FFD028',
+    accentColor: '#00E676',
+    bgColor: '#0F1015',
+
+    // Kontak
+    waNumber: '6281249578370',
+    waMessage: 'Halo Akira, saya butuh bantuan Alight Motion Premium',
+    social: {},
+
+    // Promo banner (beda dari banner peringatan — untuk promosi/diskon)
+    promo: { active: false, text: '' },
+
+    // Konten tambahan (opsional, disembunyikan kalau kosong)
+    faq: '',
+    testimoni: '',
+    stock: '',
+
+    // Pengumuman popup sekali muncul
+    announcement: { active: false, text: '' },
+
+    // Mode aktivasi (tab): enable/disable, label custom, badge custom
+    modes: {
+      pribadi: { enabled: true, label: '', badge: '' },
+      generate: { enabled: true, label: '', badge: '' },
+      buyer: { enabled: true, label: '', badge: '' }
+    }
+  }
+};
 
 async function getWarningFile() {
   const loc = parseWarningPath();
   const { data, sha } = await getJsonFile(loc, DEFAULT_WARNING);
-  return { warning: { ...DEFAULT_WARNING, ...data }, sha };
+  return { warning: deepMerge(DEFAULT_WARNING, data), sha };
 }
 
 async function saveWarningFile(warning, sha, commitMessage) {
@@ -128,4 +210,17 @@ async function saveWarningFile(warning, sha, commitMessage) {
   return saveJsonFile(loc, warning, sha, commitMessage);
 }
 
-export { getTokensFile, saveTokensFile, getWarningFile, saveWarningFile };
+// Alias semantik — dipakai di command-command "kelola tampilan website"
+// supaya kodenya lebih jelas dibaca (secara teknis file & isinya sama).
+const getSiteConfig = getWarningFile;
+const saveSiteConfig = saveWarningFile;
+
+export {
+  getTokensFile,
+  saveTokensFile,
+  getWarningFile,
+  saveWarningFile,
+  getSiteConfig,
+  saveSiteConfig,
+  DEFAULT_WARNING
+};
