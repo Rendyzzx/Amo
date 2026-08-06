@@ -45,10 +45,37 @@
             font-family: 'Plus Jakarta Sans', sans-serif;
             background-color: #0F1015;
             color: #FFFFFF;
+            position: relative;
+        }
+
+        /* Subtle grid background — gives depth without being noisy */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0, 230, 118, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 208, 40, 0.015) 1px, transparent 1px);
+            background-size: 40px 40px, 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+            mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+        }
+
+        /* Vignette + subtle glow for that "lived-in" feel */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center top, rgba(0, 230, 118, 0.04), transparent 60%),
+                        radial-gradient(ellipse at center bottom, rgba(255, 208, 40, 0.03), transparent 50%);
+            pointer-events: none;
+            z-index: 0;
         }
 
         .font-heading {
             font-family: 'Space Grotesk', sans-serif;
+            letter-spacing: -0.02em;
         }
 
         .nb-shadow {
@@ -65,13 +92,18 @@
 
         .nb-shadow-button {
             box-shadow: 3.5px 3.5px 0px 0px #000000;
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
         }
 
         .nb-shadow-button:active:not(:disabled) {
             transform: translate(2px, 2px);
             box-shadow: 1px 1px 0px 0px #000000;
+        }
+
+        .nb-shadow-button:not(:disabled):hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 5px 5px 0px 0px #000000;
         }
 
         .nb-spinner {
@@ -89,14 +121,65 @@
 
         @keyframes pulseGlow {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.4; }
         }
         .pulse-live {
-            animation: pulseGlow 1.5s infinite;
+            animation: pulseGlow 1.5s ease-in-out infinite;
         }
+
+        /* Modal entrance — scale + fade with bounce */
+        @keyframes modalIn {
+            0% { opacity: 0; transform: scale(0.92) translateY(20px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-enter {
+            animation: modalIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        /* Staggered fade-in for modal children */
+        @keyframes fadeUp {
+            0% { opacity: 0; transform: translateY(12px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-1 { animation: fadeUp 0.4s ease 0.1s both; }
+        .stagger-2 { animation: fadeUp 0.4s ease 0.2s both; }
+        .stagger-3 { animation: fadeUp 0.4s ease 0.3s both; }
+
+        /* Glitch text effect for headings */
+        @keyframes glitch {
+            0%, 92%, 100% { text-shadow: none; transform: none; }
+            93% { text-shadow: 2px 0 #00E676, -2px 0 #FFD028; transform: translateX(-1px); }
+            94% { text-shadow: -2px 0 #00E676, 2px 0 #FFD028; transform: translateX(1px); }
+            95% { text-shadow: 1px 0 #00E676, -1px 0 #FFD028; transform: none; }
+        }
+        .glitch-text {
+            animation: glitch 5s infinite;
+        }
+
+        /* Custom scrollbar for inbox lists */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0F1015; }
+        ::-webkit-scrollbar-thumb { background: #00E676; border-radius: 4px; }
+
+        /* Selection color */
+        ::selection { background: #FFD028; color: #000; }
     </style>
 </head>
 <body class="min-h-screen text-white flex flex-col justify-between items-center p-4 sm:p-6 relative">
+
+    <!-- OVERLAY MODE MAINTENANCE (dikontrol lewat /maintenance di Telegram bot) -->
+    <div id="maintenance-overlay" class="fixed inset-0 bg-darkbg z-[200] hidden flex-col items-center justify-center p-6 text-center">
+        <div class="w-16 h-16 bg-cyberYellow border-3 border-black rounded-2xl flex items-center justify-center mx-auto mb-5 nb-shadow-lg">
+            <i class="fas fa-tools text-2xl text-black"></i>
+        </div>
+        <h2 class="font-heading font-extrabold text-2xl text-cyberYellow uppercase tracking-wider mb-3">Sedang Maintenance</h2>
+        <p id="maintenance-message" class="text-sm font-semibold text-slate-300 max-w-sm mb-6">Website sedang dalam pemeliharaan. Silakan kembali lagi nanti.</p>
+        <div class="inline-flex items-center gap-2 bg-darkcard border-2 border-black px-4 py-2 rounded-xl nb-shadow-sm">
+            <span class="w-2.5 h-2.5 rounded-full bg-neonGreen pulse-live"></span>
+            <span class="text-xs font-bold text-slate-400 uppercase">Estimasi selesai: Tidak diketahui</span>
+        </div>
+        <p class="mt-8 text-[11px] text-slate-500 font-medium">&copy; Alight Motion Premium Activator</p>
+    </div>
 
     <!-- BANNER PERINGATAN / PENGUMUMAN (dikontrol lewat bot Telegram) -->
     <div id="site-warning-banner" class="hidden w-full max-w-md md:max-w-lg lg:max-w-xl mb-3 border-2.5 border-black rounded-xl p-3 px-4 nb-shadow font-bold text-sm flex items-start gap-2">
@@ -104,10 +187,13 @@
         <span id="site-warning-text" class="flex-1"></span>
     </div>
 
-    <!-- HEADER / BRANDING WITH OFFICIAL ALIGHT MOTION LOGO -->
-    <header class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-3 mb-4 text-center">
-        <div class="inline-flex items-center gap-3 bg-darkcard border-2.5 border-black rounded-2xl p-3 px-5 nb-shadow mb-2">
-            <div class="w-10 h-10 bg-black border-2 border-black rounded-xl flex items-center justify-center p-1.5 shadow-[2px_2px_0px_0px_#00E676]">
+    <!-- HEADER / BRANDING -->
+    <header class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-3 mb-4 text-center relative z-10">
+        <div class="inline-flex items-center gap-3 bg-darkcard border-2.5 border-black rounded-2xl p-3 px-5 nb-shadow mb-2 relative">
+            <!-- Subtle inner glow -->
+            <div class="absolute inset-0 bg-gradient-to-r from-cyberYellow/5 via-transparent to-neonGreen/5 rounded-2xl pointer-events-none"></div>
+            
+            <div class="relative w-11 h-11 bg-black border-2 border-black rounded-xl flex items-center justify-center p-1.5 shadow-[2px_2px_0px_0px_#00E676]">
                 <svg viewBox="0 0 500 500" class="w-full h-full">
                     <g fill="none" stroke="#00E676" stroke-linecap="round">
                         <path d="M 110 260 A 165 165 0 1 1 425 250" stroke-width="40"/>
@@ -116,14 +202,16 @@
                         <path d="M 245 355 A 35 35 0 0 0 300 310" stroke-width="25"/>
                     </g>
                 </svg>
+                <!-- Pulse dot -->
+                <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-neonGreen rounded-full pulse-live border border-black"></span>
             </div>
 
-            <div class="flex items-center font-heading font-extrabold text-2xl tracking-tight text-white">
-                <span>ALIGHT</span>
+            <div class="relative flex items-center font-heading font-extrabold text-2xl tracking-tight text-white">
+                <span class="glitch-text">ALIGHT</span>
                 <span class="bg-cyberYellow text-black border-2 border-black rounded-lg px-2 py-0.5 ml-2 text-xs font-black shadow-[2px_2px_0px_0px_#000]">PRO</span>
             </div>
         </div>
-        <p class="text-xs font-semibold text-slate-400">Layanan Aktivasi Premium Alight Motion</p>
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Layanan Aktivasi Premium</p>
     </header>
 
     <!-- MAIN CONTAINER CARD -->
@@ -428,8 +516,9 @@
         </div>
 
         <!-- ACCORDION TUTORIAL BOX -->
-        <div id="tutorial-card" class="bg-darkcard border-2.5 border-black rounded-2xl overflow-hidden nb-shadow transition-all duration-300">
-            <button type="button" id="toggle-tutorial-btn" onclick="toggleTutorial()" class="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/60 transition-colors cursor-pointer">
+        <div id="tutorial-card" class="bg-darkcard border-2.5 border-black rounded-2xl overflow-hidden nb-shadow transition-all duration-300 relative">
+            <div class="absolute top-0 left-0 w-8 h-8 border-t-2.5 border-l-2.5 border-neonGreen/40 rounded-tl-2xl pointer-events-none"></div>
+            <button type="button" id="toggle-tutorial-btn" onclick="toggleTutorial()" class="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/40 transition-colors cursor-pointer">
                 <div class="flex items-center gap-2.5">
                     <div class="w-7 h-7 bg-cyberYellow border-2 border-black rounded-lg flex items-center justify-center text-black text-xs font-bold">
                         <i class="fas fa-question text-xs"></i>
@@ -467,66 +556,96 @@
 
     </main>
 
-    <!-- FOOTER WITH BY AKIRA WATERMARK BADGE -->
-    <footer class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-6 mb-2 text-center text-xs font-bold text-slate-400 space-y-2">
-        <div class="inline-flex items-center gap-2 bg-cyberYellow text-black border-2 border-black px-3.5 py-1.5 rounded-xl font-extrabold text-xs nb-shadow-sm uppercase">
-            <span class="w-2.5 h-2.5 rounded-full bg-black"></span>
-            <span>CREATED BY <strong class="font-heading">AKIRA</strong></span>
+    <!-- FOOTER -->
+    <footer class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-6 mb-2 text-center text-xs font-bold text-slate-400 space-y-2.5 relative z-10">
+        <div class="inline-flex items-center gap-2 bg-darkcard text-slate-300 border-2 border-black px-3.5 py-1.5 rounded-xl font-bold text-[11px] nb-shadow-sm uppercase tracking-wider">
+            <span class="w-1.5 h-1.5 rounded-full bg-cyberYellow"></span>
+            <span>Created by <strong class="font-heading text-cyberYellow">AKIRA</strong></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-neonGreen"></span>
         </div>
 
-        <p class="text-[11px] text-slate-500 font-medium">
-            &copy; <span id="year"></span> Alight Motion Premium Activator.
+        <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">
+            &copy; <span id="year"></span> Alight Motion Premium Activator
         </p>
     </footer>
 
     <!-- INITIAL POPUP MODAL: "AKTIVASI DENGAN?" -->
     <div id="initial-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-        <div class="bg-darkcard border-3 border-black p-6 rounded-2xl nb-shadow-lg text-center max-w-sm md:max-w-md w-full space-y-5">
-            <div class="w-12 h-12 bg-cyberYellow border-2 border-black rounded-2xl flex items-center justify-center mx-auto text-xl text-black nb-shadow">
-                <i class="fas fa-sliders-h"></i>
+        <div class="bg-darkcard border-3 border-black p-6 sm:p-7 rounded-2xl nb-shadow-lg text-center max-w-sm md:max-w-md w-full relative overflow-hidden modal-enter">
+            <!-- Decorative corner accents -->
+            <div class="absolute top-0 left-0 w-12 h-12 border-t-3 border-l-3 border-cyberYellow rounded-tl-2xl pointer-events-none"></div>
+            <div class="absolute bottom-0 right-0 w-12 h-12 border-b-3 border-r-3 border-neonGreen rounded-br-2xl pointer-events-none"></div>
+
+            <!-- Top icon with glow ring -->
+            <div class="relative w-fit mx-auto mb-5 stagger-1">
+                <div class="absolute inset-0 bg-cyberYellow/20 blur-xl rounded-full"></div>
+                <div class="relative w-14 h-14 bg-cyberYellow border-2 border-black rounded-2xl flex items-center justify-center text-2xl text-black nb-shadow">
+                    <i class="fas fa-bolt"></i>
+                </div>
             </div>
 
-            <div>
-                <h3 class="font-heading font-extrabold text-lg text-white uppercase tracking-wider">Aktivasi Dengan?</h3>
-                <p class="text-xs font-medium text-slate-400 mt-1">Pilih metode pembuatan akun premium yang ingin kamu gunakan:</p>
+            <!-- Title with glitch effect -->
+            <div class="stagger-2">
+                <h3 class="font-heading font-extrabold text-xl text-white uppercase tracking-wider glitch-text">Aktivasi Dengan?</h3>
+                <div class="flex items-center justify-center gap-1.5 mt-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-neonGreen pulse-live"></span>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pilih metode aktivasi</p>
+                    <span class="w-1.5 h-1.5 rounded-full bg-neonGreen pulse-live"></span>
+                </div>
             </div>
 
-            <div class="space-y-3 pt-1">
+            <!-- Option buttons — staggered entrance, distinct styles -->
+            <div class="space-y-3 pt-5">
                 <!-- Option 1: Akun Pribadi -->
                 <button type="button" onclick="requestMode('pribadi')"
-                    class="w-full py-3.5 px-4 bg-cyberYellow hover:bg-amber-400 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer">
-                    <span class="flex items-center gap-2">
-                        <i class="fas fa-user text-sm"></i>
+                    class="stagger-1 group w-full py-4 px-4 bg-cyberYellow hover:bg-amber-400 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer transition-all">
+                    <span class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 bg-black/15 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-user text-sm"></i>
+                        </span>
                         <span>Akun Pribadi</span>
                     </span>
-                    <i class="fas fa-lock text-xs"></i>
+                    <i class="fas fa-lock text-xs opacity-60 group-hover:opacity-100 transition-opacity"></i>
                 </button>
 
                 <!-- Option 2: Akun Generate -->
                 <button type="button" onclick="requestMode('generate')"
-                    class="w-full py-3.5 px-4 bg-neonGreen hover:bg-emerald-400 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer">
-                    <span class="flex items-center gap-2">
-                        <i class="fas fa-robot text-sm"></i>
-                        <span>Akun Generate (Auto-Aktif)</span>
+                    class="stagger-2 group w-full py-4 px-4 bg-neonGreen hover:bg-emerald-400 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer transition-all">
+                    <span class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 bg-black/15 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-robot text-sm"></i>
+                        </span>
+                        <span>Akun Generate</span>
+                        <span class="bg-black text-neonGreen px-1.5 py-0.5 rounded text-[9px] font-black border border-black/20">AUTO</span>
                     </span>
-                    <i class="fas fa-lock text-xs"></i>
+                    <i class="fas fa-lock text-xs opacity-60 group-hover:opacity-100 transition-opacity"></i>
                 </button>
 
                 <!-- Option 3: Cek Mailbox Buyer -->
                 <button type="button" onclick="requestMode('buyer')"
-                    class="w-full py-3.5 px-4 bg-sky-400 hover:bg-sky-300 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer">
-                    <span class="flex items-center gap-2">
-                        <i class="fas fa-key text-sm"></i>
-                        <span>Cek Mailbox (Khusus Buyer)</span>
+                    class="stagger-3 group w-full py-4 px-4 bg-sky-400 hover:bg-sky-300 border-2 border-black font-extrabold text-black rounded-xl text-xs nb-shadow-button flex items-center justify-between uppercase cursor-pointer transition-all">
+                    <span class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 bg-black/15 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-key text-sm"></i>
+                        </span>
+                        <span>Cek Mailbox</span>
+                        <span class="bg-black/70 text-sky-200 px-1.5 py-0.5 rounded text-[9px] font-black">BUYER</span>
                     </span>
-                    <i class="fas fa-chevron-right text-xs"></i>
+                    <i class="fas fa-chevron-right text-xs opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all"></i>
                 </button>
+            </div>
+
+            <!-- Footer badge -->
+            <div class="flex items-center justify-center gap-1.5 mt-5 pt-4 border-t-2 border-black/40">
+                <i class="fas fa-shield-halved text-[10px] text-neonGreen"></i>
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Powered by Alight Pro</span>
             </div>
         </div>
     </div>
 
     <!-- POPUP MODAL: LOGIN SELLER (Khusus Pribadi & Generate) -->
     <div id="seller-login-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-[140] flex items-center justify-center p-4 hidden">
+        <!-- Added modal-enter to inner div below -->
         <div class="bg-darkcard border-3 border-black p-5 sm:p-6 rounded-2xl nb-shadow-lg max-w-sm md:max-w-md w-full space-y-4 relative text-left">
             <button type="button" onclick="closeSellerLoginModal()" class="absolute top-3 right-3 text-slate-400 hover:text-white p-1.5 cursor-pointer">
                 <i class="fas fa-times text-base"></i>
@@ -1672,11 +1791,45 @@
         // Initialize default tutorial mode content
         updateTutorialContent('pribadi');
 
-        // ---- Banner peringatan/pengumuman dari Telegram bot ----
+        // ---- Banner peringatan & mode maintenance dari Telegram bot ----
         (async function loadSiteWarning() {
             try {
                 const res = await axios.get('/api/status');
                 const warning = res.data && res.data.warning;
+
+                // CEK MAINTENANCE DULU — kalau aktif, tampilkan overlay & sembunyikan UI
+                if (warning && warning.maintenance) {
+                    const overlay = document.getElementById('maintenance-overlay');
+                    const msgEl = document.getElementById('maintenance-message');
+                    if (overlay) {
+                        overlay.classList.remove('hidden');
+                        overlay.classList.add('flex');
+                        if (msgEl && warning.maintenanceMessage) {
+                            msgEl.textContent = warning.maintenanceMessage;
+                        }
+                        // Sembunyikan semua elemen UI utama
+                        document.querySelectorAll('header, main, footer, #initial-modal, #seller-login-modal, #buyer-modal, #site-warning-banner').forEach(function(el) {
+                            el.style.display = 'none';
+                        });
+                    }
+                    return; // Jangan lanjut ke banner kalau sedang maintenance
+                }
+
+                // Auto-poll: kalau sedang maintenance, cek tiap 30s. Kalau sudah normal → reload otomatis
+                if (!window.__maintenancePolling) {
+                    window.__maintenancePolling = setInterval(async function() {
+                        try {
+                            var r = await axios.get('/api/status');
+                            var w = r.data && r.data.warning;
+                            if (!w || !w.maintenance) {
+                                clearInterval(window.__maintenancePolling);
+                                location.reload();
+                            }
+                        } catch(e) {}
+                    }, 30000);
+                }
+
+                // Kalau tidak maintenance, tampilkan banner kalau ada
                 if (!warning || !warning.active || !warning.message) return;
 
                 const banner = document.getElementById('site-warning-banner');
