@@ -749,6 +749,7 @@
         let isTimerRunning = false;
         let autoPollInterval = null;
         let autoPollSeconds = 0;
+        let seenMessageIds = new Set();
 
         // --- MODAL SELECTION ---
         function selectInitialMode(mode) {
@@ -1015,6 +1016,7 @@
         function startAutoPollAndActivate() {
             stopAutoPoll();
             autoPollSeconds = 0;
+            seenMessageIds.clear();
             const statusIcon = document.getElementById('auto-status-icon');
             const statusText = document.getElementById('auto-status-text');
             const timerBadge = document.getElementById('auto-timer-badge');
@@ -1042,6 +1044,42 @@
             }
             const statusIcon = document.getElementById('auto-status-icon');
             if (statusIcon) statusIcon.className = 'fas fa-pause-circle';
+        }
+
+        // --- HTML ENTITY DECODER (untuk extract URL dari email HTML) ---
+        function decodeHtmlEntities(str) {
+            if (!str) return '';
+            var txt = document.createElement('textarea');
+            txt.innerHTML = str;
+            return txt.value;
+        }
+
+        // --- ENHANCED URL EXTRACTOR (handle HTML entities, href attrs, encoded URLs) ---
+        function extractVerificationUrl(text) {
+            if (!text) return null;
+
+            // Decode HTML entities first (e.g. &amp; -> &)
+            var decoded = decodeHtmlEntities(text);
+
+            // Try href attributes first (most reliable for HTML emails)
+            var hrefMatches = decoded.match(/href=["']?(https?:\/\/[^"'\s<>]+)["']?/gi);
+            if (hrefMatches) {
+                for (var i = 0; i < hrefMatches.length; i++) {
+                    var url = hrefMatches[i].replace(/href=["']?/i, '').replace(/["']$/, '');
+                    if (url.includes('alight') || url.includes('verify') || url.includes('login')) {
+                        return url;
+                    }
+                }
+                return hrefMatches[0].replace(/href=["']?/i, '').replace(/["']$/, '');
+            }
+
+            // Fallback: plain URL regex
+            var urlMatch = decoded.match(/https:\/\/[^\s"'<>]+/gi);
+            if (urlMatch && urlMatch.length > 0) {
+                return urlMatch.find(function(u) { return u.includes('alight') || u.includes('verify') || u.includes('login'); }) || urlMatch[0];
+            }
+
+            return null;
         }
 
         // --- LOADING & ALERT HELPERS ---
@@ -1143,10 +1181,35 @@
                         btnSubmitEmail.classList.remove('opacity-80', 'bg-slate-700', 'text-slate-300');
                         btnSubmitEmail.classList.add('bg-neonGreen', 'hover:bg-emerald-400', 'text-black');
 
-                        btnSpan.textContent = 'KLIK SEKALI LAGI UNTUK LANJUT';
-                        btnIconEmail.className = 'fas fa-arrow-right';
+                        btnSpan.textContent = 'MEMPROSES...';
+                        btnIconEmail.className = 'fas fa-spinner animate-spin';
 
-                        showAlert('Siap! Klik tombol sekali lagi untuk lanjut.', true, false);
+                        showAlert('Panduan sudah dibaca, memproses email...', true, false);
+
+                        // AUTO-PROCEED: langsung panggil API tanpa perlu klik lagi
+                        savedEmail = emailVal;
+                        showLoading("Mengirim email verifikasi...");
+
+                        axios.get('/api/premium?action=check&email=' + encodeURIComponent(emailVal))
+                            .then(function(res) {
+                                hideLoading();
+                                var data = res.data;
+                                btnSpan.textContent = 'Minta Kode Verifikasi';
+                                btnIconEmail.className = 'fas fa-paper-plane';
+                                if (data.status || data.success) {
+                                    displayEmail.textContent = emailVal;
+                                    setStep(2);
+                                    showAlert(data.message || 'Permintaan diproses. Masukkan URL verifikasi.', true, false);
+                                } else {
+                                    showAlert(data.message || 'Gagal memproses email.', false, false);
+                                }
+                            })
+                            .catch(function(err) {
+                                hideLoading();
+                                btnSpan.textContent = 'Minta Kode Verifikasi';
+                                btnIconEmail.className = 'fas fa-paper-plane';
+                                showAlert('Koneksi gagal. Cek jaringan internet kamu.', false, false);
+                            });
                     }
                 }, 1000);
 
@@ -1186,13 +1249,36 @@
             showLoading("Membuat email temp baru...");
 
             let res;
+            let usedFallback = false;
             if (currentServer === 'tempail') {
                 res = await tempailScraper.createEmail();
+                if (!res.success) {
+                    // Server utama gagal -> otomatis coba server cadangan.
+                    showLoading("Server utama sibuk, mencoba server cadangan...");
+                    const fallbackRes = await tempboxScraper.createEmail();
+                    if (fallbackRes.success) {
+                        res = fallbackRes;
+                        usedFallback = true;
+                        setServerEngine('tempbox');
+                    }
+                }
             } else {
                 res = await tempboxScraper.createEmail();
+                if (!res.success) {
+                    showLoading("Server utama sibuk, mencoba server cadangan...");
+                    const fallbackRes = await tempailScraper.createEmail();
+                    if (fallbackRes.success) {
+                        res = fallbackRes;
+                        usedFallback = true;
+                        setServerEngine('tempail');
+                    }
+                }
             }
 
             if (res.success) {
+                if (usedFallback) {
+                    showAlert('Server utama sedang gangguan, otomatis dialihkan ke server cadangan.', true, false);
+                }
                 savedEmail = res.email;
                 savedToken = res.emailToken;
 
@@ -1278,9 +1364,13 @@
                         msgItem.onclick = () => readMessageDetailScraper(msg.id);
 
                         if (isAuto) {
-                            readMessageDetailScraper(msg.id);
+                            if (!seenMessageIds.has(msg.id)) {
+                                seenMessageIds.add(msg.id);
+                                readMessageDetailScraper(msg.id);
+                            }
                         }
                     } else {
+                        var msgKey = msg.subject + '|' + (msg.from || '');
                         msgItem.innerHTML = `
                             <div class="flex justify-between font-bold text-white">
                                 <span>${msg.from}</span>
@@ -1289,14 +1379,20 @@
                             <div class="text-[10px] text-slate-300 font-mono break-all line-clamp-2">${msg.body || ''}</div>
                         `;
                         
-                        const urlMatch = (msg.body || '').match(/https:\/\/[^\s"'<>]+/gi);
-                        if (urlMatch) {
+                        if (isAuto && seenMessageIds.has(msgKey)) {
+                            // Skip already-processed tempbox messages
+                        } else if (isAuto) {
+                            seenMessageIds.add(msgKey);
+                        }
+                        var targetUrl = extractVerificationUrl(msg.body);
+                        if (targetUrl) {
                             stopAutoPoll();
-                            let targetUrl = urlMatch.find(u => u.includes('alight') || u.includes('verify')) || urlMatch[0];
                             genVerifyLink.value = targetUrl;
                             autoLinkBadge.classList.remove('hidden');
                             showAlert('⚡ URL Verifikasi otomatis ditemukan! Mengaktifkan premium...', true, false);
                             executeVerification(savedEmail, targetUrl);
+                        } else {
+                            console.log('[Auto-Verify] Email masuk (Tempbox) tapi tidak ada URL ditemukan di body.');
                         }
                     }
 
@@ -1305,23 +1401,40 @@
             } else {
                 if (!isAuto) inboxStatus.textContent = "Belum ada pesan baru.";
             }
+
+            // Notify user if messages were found but no URL extracted yet (not "diam")
+            if (isAuto && res.success && res.messages && res.messages.length > 0) {
+                if (autoLinkBadge.classList.contains('hidden')) {
+                    // URL not yet found — let user know we're still trying
+                    if (autoPollSeconds > 10) {
+                        showAlert('📧 Email masuk terdeteksi! Mengekstrak link verifikasi... mohon tunggu.', true, false);
+                    }
+                }
+            }
         }
 
         async function readMessageDetailScraper(msgId) {
-            const res = await tempailScraper.getMessage(msgId);
+            try {
+                const res = await tempailScraper.getMessage(msgId);
 
-            if (res.success && res.message) {
-                const bodyText = res.message.content || '';
-                const urlMatch = bodyText.match(/https:\/\/[^\s"'<>]+/gi);
+                if (res.success && res.message) {
+                    const bodyText = res.message.content || '';
+                    const targetUrl = extractVerificationUrl(bodyText);
 
-                if (urlMatch && urlMatch.length > 0) {
-                    stopAutoPoll();
-                    let targetUrl = urlMatch.find(u => u.includes('alight') || u.includes('verify')) || urlMatch[0];
-                    genVerifyLink.value = targetUrl;
-                    autoLinkBadge.classList.remove('hidden');
-                    showAlert('⚡ Link verifikasi ditemukan! Otomatis memproses aktivasi...', true, false);
-                    executeVerification(savedEmail, targetUrl);
+                    if (targetUrl) {
+                        stopAutoPoll();
+                        genVerifyLink.value = targetUrl;
+                        autoLinkBadge.classList.remove('hidden');
+                        showAlert('⚡ Link verifikasi ditemukan! Otomatis memproses aktivasi...', true, false);
+                        executeVerification(savedEmail, targetUrl);
+                    } else {
+                        console.log('[Auto-Verify] Email dibaca tapi tidak ada URL verifikasi ditemukan di konten.');
+                    }
+                } else {
+                    console.log('[Auto-Verify] Gagal membaca detail pesan:', res.error || 'unknown error');
                 }
+            } catch (e) {
+                console.error('[Auto-Verify] Error saat membaca pesan:', e);
             }
         }
 
