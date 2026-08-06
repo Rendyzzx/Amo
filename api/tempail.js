@@ -2,7 +2,7 @@
 // Endpoint upstream & header di sini TIDAK PERNAH terkirim ke browser client —
 // hanya hasil (JSON) yang diteruskan lewat response ini.
 
-import { notifyTelegram } from './_lib/telegram.js';
+import { notifyTelegram, notifyError } from './_lib/telegram.js';
 
 const BASE = 'https://tempail.top/api';
 const HEADERS = { 'user-agent': 'Postify/1.0.0' };
@@ -25,6 +25,11 @@ export default async function handler(req, res) {
       });
       const data = await upstreamRes.json();
       if (data.status !== 'success') {
+        await notifyError(req, {
+          action: 'Buat Email Temp (Tempail)',
+          error: new Error('Upstream tempail.top tidak sukses.'),
+          extra: { 'HTTP Status Upstream': upstreamRes.status, 'Response Upstream': JSON.stringify(data).slice(0, 500) }
+        });
         return res.status(200).json({ success: false, error: 'Gagal bikin email temp.' });
       }
       const { email, email_token: emailToken } = data.data;
@@ -43,6 +48,11 @@ export default async function handler(req, res) {
       });
       const data = await upstreamRes.json();
       if (data.status !== 'success') {
+        await notifyError(req, {
+          action: 'Cek List Pesan (Tempail)',
+          error: new Error('Upstream tempail.top tidak sukses.'),
+          extra: { 'HTTP Status Upstream': upstreamRes.status, 'Response Upstream': JSON.stringify(data).slice(0, 500) }
+        });
         return res.status(200).json({ success: false, error: 'Gagal ambil list pesan.' });
       }
       const { mailbox, messages } = data.data;
@@ -61,6 +71,11 @@ export default async function handler(req, res) {
       });
       const data = await upstreamRes.json();
       if (data.status !== 'success') {
+        await notifyError(req, {
+          action: 'Buka Isi Pesan (Tempail)',
+          error: new Error('Upstream tempail.top tidak sukses.'),
+          extra: { 'HTTP Status Upstream': upstreamRes.status, 'Response Upstream': JSON.stringify(data).slice(0, 500) }
+        });
         return res.status(200).json({ success: false, error: 'Gagal ambil isi pesan.' });
       }
       const [msg] = data.data;
@@ -84,6 +99,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'action tidak valid' });
     }
   } catch (e) {
+    await notifyError(req, { action: `Tempail (action=${action || '-'})`, error: e });
     return res.status(500).json({ success: false, error: 'Gagal menghubungi server email.' });
   }
 }

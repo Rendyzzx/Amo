@@ -1,7 +1,7 @@
 // Proxy server-side untuk endpoint aktivasi premium.
 // Domain & path upstream aslinya TIDAK dikirim ke client — hanya lewat sini.
 
-import { notifyTelegram } from './_lib/telegram.js';
+import { notifyTelegram, notifyError } from './_lib/telegram.js';
 
 const BASE = 'https://alightmotion.qsr.web.id';
 
@@ -41,6 +41,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'action tidak valid' });
     }
   } catch (e) {
+    await notifyError(req, { action: `Premium (action=${action || '-'})`, error: e });
     return res.status(500).json({ success: false, error: 'Gagal menghubungi server aktivasi.' });
   }
 }

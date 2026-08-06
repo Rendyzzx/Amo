@@ -17,7 +17,7 @@
 //   { "tokens": [ { "token": "ABC123", "limit": 100, "used": 3 } ] }
 //   limit = -1 artinya unlimited.
 
-import { notifyTelegram } from './_lib/telegram.js';
+import { notifyTelegram, notifyError } from './_lib/telegram.js';
 import { getTokensFile, saveTokensFile } from './_lib/github.js';
 
 export default async function handler(req, res) {
@@ -65,6 +65,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true });
   } catch (e) {
+    await notifyError(req, { action: 'Verifikasi Token Seller', error: e, extra: { Token: token } });
     return res.status(500).json({ success: false, error: e.message || 'Gagal memverifikasi token.' });
   }
 }

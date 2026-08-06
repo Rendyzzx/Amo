@@ -1,7 +1,7 @@
 // Proxy server-side untuk tempmail.lol (server fallback "Tempbox").
 // Sama seperti tempail.js — endpoint upstream disembunyikan dari client.
 
-import { notifyTelegram } from './_lib/telegram.js';
+import { notifyTelegram, notifyError } from './_lib/telegram.js';
 
 const HEADERS = { 'user-agent': 'NB Android/1.0.0' };
 
@@ -20,6 +20,15 @@ export default async function handler(req, res) {
       });
       const data = await upstreamRes.json();
 
+      if (!upstreamRes.ok || !data.address) {
+        await notifyError(req, {
+          action: 'Buat Email Temp (Tempbox)',
+          error: new Error('Upstream tempmail.lol tidak mengembalikan alamat email.'),
+          extra: { 'HTTP Status Upstream': upstreamRes.status, 'Response Upstream': JSON.stringify(data).slice(0, 500) }
+        });
+        return res.status(200).json({ success: false, error: 'Gagal bikin email temp.' });
+      }
+
       await notifyTelegram(req, {
         action: 'Buat Email Temp (Tempbox)',
         detail: { Email: data.address }
@@ -34,6 +43,15 @@ export default async function handler(req, res) {
       });
       const data = await upstreamRes.json();
 
+      if (!upstreamRes.ok) {
+        await notifyError(req, {
+          action: 'Cek List Pesan (Tempbox)',
+          error: new Error('Upstream tempmail.lol gagal.'),
+          extra: { 'HTTP Status Upstream': upstreamRes.status, 'Response Upstream': JSON.stringify(data).slice(0, 500) }
+        });
+        return res.status(200).json({ success: false, error: 'Gagal ambil list pesan.' });
+      }
+
       await notifyTelegram(req, {
         action: 'Cek List Pesan (Tempbox)',
         detail: { 'Jumlah Pesan': (data.emails || []).length }
@@ -45,6 +63,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'action tidak valid' });
     }
   } catch (e) {
+    await notifyError(req, { action: `Tempbox (action=${action || '-'})`, error: e });
     return res.status(500).json({ success: false, error: 'Gagal menghubungi server email.' });
   }
 }
