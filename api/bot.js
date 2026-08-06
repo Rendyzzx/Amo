@@ -1,6 +1,8 @@
 // Webhook bot Telegram untuk kelola token seller (buat, hapus, atur limit),
 // kirim peringatan/pengumuman (banner), atur mode maintenance website,
-// serta kustomisasi profil bot Telegram (nama, deskripsi, foto profil).
+// kustomisasi profil bot Telegram (nama, deskripsi, foto profil),
+// DAN 30 fitur pengaturan tampilan/konten website (branding, warna, kontak,
+// promo, mode aktivasi, admin tambahan, backup/restore, dll).
 //
 // ==== SETUP ====
 // 1. Buat bot lewat @BotFather, catat TELEGRAM_BOT_TOKEN.
@@ -15,37 +17,24 @@
 //      https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://DOMAIN-KAMU.vercel.app/api/bot
 //
 // ==== PERINTAH DI TELEGRAM ====
-//   /addtoken <TOKEN> <LIMIT|unli>   - Buat token baru.
-//   /setlimit <TOKEN> <LIMIT|unli>   - Ubah limit token.
-//   /reset <TOKEN>                    - Reset pemakaian token ke 0.
-//   /deltoken <TOKEN>                 - Hapus token.
-//   /listtoken                        - Lihat semua token.
-//
-//   -- Maintenance Mode --
-//   /maintenance [pesan]              - Aktifkan mode maintenance website.
-//   /unmaintenance                    - Matikan mode maintenance (kembali normal).
-//
-//   -- Banner Peringatan Website --
-//   /warn <pesan>                     - Tampilkan banner peringatan (kuning) di website.
-//   /danger <pesan>                   - Tampilkan banner bahaya (merah) di website.
-//   /info <pesan>                     - Tampilkan banner info (biru) di website.
-//   /clearwarn                        - Sembunyikan banner di website.
-//   /status                           - Lihat status maintenance & banner yang aktif.
-//
-//   -- Kustomisasi Profil Bot --
-//   /setbotname <nama>                - Ubah nama bot Telegram (setMyName).
-//   /setdescription <deskripsi>       - Ubah deskripsi bot Telegram (setMyDescription).
-//   /setshortdesc <deskripsi>         - Ubah deskripsi singkat bot Telegram (setMyShortDescription).
-//   /setprofile [URL]                 - Ubah foto profil bot (setMyProfilePhoto) via URL atau upload foto.
-//
-//   /start, /help                     - Lihat daftar perintah.
+// Ketik /help di chat bot buat lihat daftar lengkap & selalu up to date.
 
-import { getTokensFile, saveTokensFile, getWarningFile, saveWarningFile } from './_lib/github.js';
+import {
+  getTokensFile,
+  saveTokensFile,
+  getWarningFile,
+  saveWarningFile,
+  getSiteConfig,
+  saveSiteConfig,
+  DEFAULT_WARNING
+} from './_lib/github.js';
 
 // Banner gambar buat mempercantik bot. Bisa diganti ke URL gambar sendiri
 // (logo/banner brand kamu) kapan aja, tinggal ubah BANNER_IMAGE_URL.
 const BANNER_IMAGE_URL =
   'https://placehold.co/900x420/0f0f1a/f5c518/png?text=Alight+Motion+Premium%0AControl+Panel&font=montserrat';
+
+const VALID_MODES = ['pribadi', 'generate', 'buyer'];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -60,21 +49,30 @@ export default async function handler(req, res) {
   if (!message) return res.status(200).json({ ok: true });
 
   const text = (message.text || message.caption || '').trim();
-  if (!text) return res.status(200).json({ ok: true });
+  const hasDocument = !!message.document;
+  if (!text && !hasDocument) return res.status(200).json({ ok: true });
 
   const chatId = message.chat.id;
 
-  if (!isAdmin(chatId)) {
+  if (!(await isAdmin(chatId))) {
     await sendMessage(botToken, chatId, `⛔ <b>Akses ditolak</b>\nKamu tidak punya izin untuk mengakses bot ini.`);
     return res.status(200).json({ ok: true });
   }
 
-  const cmd = text.split(/\s+/)[0].toLowerCase();
+  const cmd = (text.split(/\s+/)[0] || '').toLowerCase();
 
   try {
     // /start dan /help dikirim dengan gambar banner biar lebih "wah".
     if (cmd === '/start' || cmd === '/help') {
       await sendPhoto(botToken, chatId, BANNER_IMAGE_URL, helpText());
+      return res.status(200).json({ ok: true });
+    }
+
+    // /restore bisa dikirim sebagai caption pada file .json — tangani sebelum
+    // parsing teks biasa karena butuh akses ke message.document.
+    if (cmd === '/restore') {
+      const reply = await handleRestore(message, botToken);
+      await sendMessage(botToken, chatId, reply);
       return res.status(200).json({ ok: true });
     }
 
@@ -87,18 +85,27 @@ export default async function handler(req, res) {
   return res.status(200).json({ ok: true });
 }
 
-function isAdmin(chatId) {
+async function isAdmin(chatId) {
   const raw = process.env.TELEGRAM_ADMIN_IDS || '';
   const ids = raw.split(',').map(s => s.trim()).filter(Boolean);
-  return ids.includes(String(chatId));
+  if (ids.includes(String(chatId))) return true;
+
+  // Bukan admin utama (env) — cek juga admin tambahan yang disimpan via /addadmin.
+  try {
+    const { warning } = await getWarningFile();
+    return Array.isArray(warning.admins) && warning.admins.map(String).includes(String(chatId));
+  } catch {
+    return false;
+  }
 }
 
 async function handleCommand(text, message, botToken) {
   const [cmdRaw, ...args] = text.split(/\s+/);
   const cmd = cmdRaw.toLowerCase();
+  const restArgs = text.slice(cmdRaw.length).trim(); // teks lengkap setelah command (untuk pesan panjang)
 
   switch (cmd) {
-    // ---- Kelola Token Seller ----
+    // ================= KELOLA TOKEN SELLER =================
     case '/addtoken': {
       const [token, limitRaw] = args;
       if (!token) return '📝 Format:\n<code>/addtoken TOKEN LIMIT</code>\n\nContoh: <code>/addtoken SELLER01 50</code>';
@@ -166,7 +173,7 @@ async function handleCommand(text, message, botToken) {
       return `📋 <b>Daftar Token</b> (${tokens.length})\n━━━━━━━━━━━━━━\n${lines.join('\n\n')}`;
     }
 
-    // ---- Fitur Maintenance Mode ----
+    // ================= MAINTENANCE MODE =================
     case '/maintenance': {
       const customMsg = args.join(' ').trim();
       const { warning, sha } = await getWarningFile();
@@ -201,7 +208,7 @@ async function handleCommand(text, message, botToken) {
       );
     }
 
-    // ---- Fitur banner peringatan di website ----
+    // ================= BANNER PERINGATAN =================
     case '/warn':
     case '/danger':
     case '/info': {
@@ -245,25 +252,282 @@ async function handleCommand(text, message, botToken) {
       const isMaint = !!warning.maintenance;
       const maintStatus = isMaint
         ? `🛠️ <b>AKTIF</b>\n   Pesan: ${escapeHtml(warning.maintenanceMessage || 'Sedang Maintenance')}`
-        : `✅ <b>NON-AKTIF</b>`;
+        : '✅ Tidak aktif';
 
-      let bannerStatus = '✅ Tidak ada banner yang aktif saat ini.';
-      if (warning.active && warning.message) {
-        const label = warning.type === 'warning' ? '⚠️ Warning' : warning.type === 'danger' ? '🚨 Danger' : 'ℹ️ Info';
-        bannerStatus = `📢 <b>Banner Aktif (${label}):</b>\n   Pesan: ${escapeHtml(warning.message)}`;
-      }
+      const bannerStatus = warning.active
+        ? `📢 <b>AKTIF</b> (${warning.type})\n   Pesan: ${escapeHtml(warning.message || '-')}`
+        : '✅ Tidak ada banner aktif';
+
+      const promo = warning.site && warning.site.promo;
+      const promoStatus = promo && promo.active ? `🎉 <b>AKTIF</b>\n   Teks: ${escapeHtml(promo.text || '-')}` : '✅ Tidak aktif';
+
+      const announcement = warning.site && warning.site.announcement;
+      const annStatus = announcement && announcement.active ? `📣 <b>AKTIF</b>\n   Teks: ${escapeHtml(announcement.text || '-')}` : '✅ Tidak aktif';
 
       return (
-        `📊 <b>Status Website Saat Ini</b>\n` +
+        `📊 <b>STATUS WEBSITE</b>\n` +
         `━━━━━━━━━━━━━━\n` +
-        `<b>Mode Maintenance:</b>\n${maintStatus}\n\n` +
-        `<b>Banner Website:</b>\n${bannerStatus}\n` +
+        `<b>Maintenance:</b>\n${maintStatus}\n\n` +
+        `<b>Banner Website:</b>\n${bannerStatus}\n\n` +
+        `<b>Promo Banner:</b>\n${promoStatus}\n\n` +
+        `<b>Pengumuman Popup:</b>\n${annStatus}\n` +
         `━━━━━━━━━━━━━━\n` +
         `Diubah: ${warning.updatedAt || '-'}`
       );
     }
 
-    // ---- Fitur Kustomisasi Profil Bot Telegram ----
+    // ================= [1-6] BRANDING WEBSITE =================
+    case '/setbrand': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setbrand ALIGHT</code>';
+      return await mutateSite(s => { s.brandName = val; }, `✅ Nama brand diubah jadi <b>${escapeHtml(val)}</b>.`);
+    }
+
+    case '/settagline': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/settagline Layanan Aktivasi Premium</code>';
+      return await mutateSite(s => { s.tagline = val; }, `✅ Tagline diubah jadi:\n<i>${escapeHtml(val)}</i>`);
+    }
+
+    case '/setfootertext': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setfootertext Created by NAMA_KAMU</code>';
+      return await mutateSite(s => { s.footerText = val; }, `✅ Teks footer diubah jadi:\n${escapeHtml(val)}`);
+    }
+
+    case '/setfavicon': {
+      const url = args[0];
+      if (!url) return '📝 Format:\n<code>/setfavicon https://domain.com/favicon.png</code>';
+      return await mutateSite(s => { s.faviconUrl = url; }, `✅ Favicon website diubah.`);
+    }
+
+    case '/setlogo': {
+      const url = args[0];
+      if (!url) return '📝 Format:\n<code>/setlogo https://domain.com/logo.png</code>\n\nKetik <code>/setlogo reset</code> buat balik ke logo default.';
+      return await mutateSite(s => { s.logoUrl = url === 'reset' ? '' : url; }, `✅ Logo website diubah.`);
+    }
+
+    case '/settitle': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/settitle Judul Tab Browser</code>';
+      return await mutateSite(s => { s.pageTitle = val; }, `✅ Judul tab browser diubah jadi:\n<i>${escapeHtml(val)}</i>`);
+    }
+
+    // ================= [7-10] TEMA WARNA =================
+    case '/setprimarycolor': {
+      const hex = args[0];
+      if (!isHexColor(hex)) return '📝 Format:\n<code>/setprimarycolor #FFD028</code>\n\nHarus kode warna hex, contoh: #FFD028';
+      return await mutateSite(s => { s.primaryColor = hex; }, `✅ Warna utama (kuning) diubah jadi <b>${hex}</b>.`);
+    }
+
+    case '/setaccentcolor': {
+      const hex = args[0];
+      if (!isHexColor(hex)) return '📝 Format:\n<code>/setaccentcolor #00E676</code>\n\nHarus kode warna hex, contoh: #00E676';
+      return await mutateSite(s => { s.accentColor = hex; }, `✅ Warna aksen (hijau) diubah jadi <b>${hex}</b>.`);
+    }
+
+    case '/setbgcolor': {
+      const hex = args[0];
+      if (!isHexColor(hex)) return '📝 Format:\n<code>/setbgcolor #0F1015</code>\n\nHarus kode warna hex, contoh: #0F1015';
+      return await mutateSite(s => { s.bgColor = hex; }, `✅ Warna background website diubah jadi <b>${hex}</b>.`);
+    }
+
+    case '/resettheme': {
+      return await mutateSite(s => {
+        s.primaryColor = DEFAULT_WARNING.site.primaryColor;
+        s.accentColor = DEFAULT_WARNING.site.accentColor;
+        s.bgColor = DEFAULT_WARNING.site.bgColor;
+      }, `🔄 Tema warna website dikembalikan ke default.`);
+    }
+
+    // ================= [11-13] KONTAK =================
+    case '/setwa': {
+      const num = (args[0] || '').replace(/[^0-9]/g, '');
+      if (!num) return '📝 Format:\n<code>/setwa 6281234567890</code>\n\nGunakan format internasional tanpa + atau 0 di depan.';
+      return await mutateSite(s => { s.waNumber = num; }, `✅ Nomor WhatsApp tujuan diubah jadi <b>${num}</b>.`);
+    }
+
+    case '/setwamsg': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setwamsg Halo, saya butuh bantuan...</code>';
+      return await mutateSite(s => { s.waMessage = val; }, `✅ Template pesan WhatsApp diubah.`);
+    }
+
+    case '/setsocial': {
+      const [platform, url] = args;
+      if (!platform || !url) return '📝 Format:\n<code>/setsocial instagram https://instagram.com/kamu</code>';
+      const key = platform.toLowerCase();
+      return await mutateSite(s => {
+        if (!s.social) s.social = {};
+        s.social[key] = url;
+      }, `✅ Link ${escapeHtml(key)} diatur ke:\n${escapeHtml(url)}`);
+    }
+
+    // ================= [14-15] PROMO BANNER =================
+    case '/setpromo': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setpromo Diskon 20% khusus hari ini!</code>';
+      return await mutateSite(s => {
+        if (!s.promo) s.promo = {};
+        s.promo.active = true;
+        s.promo.text = val;
+      }, `🎉 Promo banner diaktifkan:\n${escapeHtml(val)}`);
+    }
+
+    case '/clearpromo': {
+      return await mutateSite(s => {
+        if (!s.promo) s.promo = {};
+        s.promo.active = false;
+      }, `✅ Promo banner disembunyikan.`);
+    }
+
+    // ================= [16-18] KONTEN TAMBAHAN =================
+    case '/setfaq': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setfaq Q: Kenapa email tidak terkirim? A: ...</code>\n\nKetik <code>/setfaq off</code> buat sembunyikan.';
+      return await mutateSite(s => { s.faq = val === 'off' ? '' : val; }, `✅ Konten FAQ website diperbarui.`);
+    }
+
+    case '/settestimoni': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/settestimoni "Prosesnya cepat banget!" - Budi</code>\n\nKetik <code>/settestimoni off</code> buat sembunyikan.';
+      return await mutateSite(s => { s.testimoni = val === 'off' ? '' : val; }, `✅ Testimoni website diperbarui.`);
+    }
+
+    case '/setstock': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setstock Stok tersedia: 24 slot</code>\n\nKetik <code>/setstock off</code> buat sembunyikan.';
+      return await mutateSite(s => { s.stock = val === 'off' ? '' : val; }, `✅ Label stok website diperbarui.`);
+    }
+
+    // ================= [19-22] MODE AKTIVASI =================
+    case '/enablemode':
+    case '/disablemode': {
+      const mode = (args[0] || '').toLowerCase();
+      if (!VALID_MODES.includes(mode)) return `📝 Format:\n<code>${cmd} pribadi|generate|buyer</code>`;
+      const enabled = cmd === '/enablemode';
+      return await mutateSite(s => {
+        if (!s.modes) s.modes = {};
+        if (!s.modes[mode]) s.modes[mode] = { enabled: true, label: '', badge: '' };
+        s.modes[mode].enabled = enabled;
+      }, `✅ Mode <b>${mode}</b> ${enabled ? 'diaktifkan' : 'dinonaktifkan'} di website.`);
+    }
+
+    case '/setmodelabel': {
+      const [mode, ...rest] = args;
+      const label = rest.join(' ').trim();
+      if (!VALID_MODES.includes((mode || '').toLowerCase()) || !label) {
+        return '📝 Format:\n<code>/setmodelabel pribadi Akun Sendiri</code>\n\nKetik label "reset" buat balik ke default.';
+      }
+      const m = mode.toLowerCase();
+      return await mutateSite(s => {
+        if (!s.modes) s.modes = {};
+        if (!s.modes[m]) s.modes[m] = { enabled: true, label: '', badge: '' };
+        s.modes[m].label = label.toLowerCase() === 'reset' ? '' : label;
+      }, `✅ Label tab <b>${m}</b> diubah jadi:\n${escapeHtml(label)}`);
+    }
+
+    case '/setbadge': {
+      const [mode, ...rest] = args;
+      const badge = rest.join(' ').trim();
+      if (!VALID_MODES.includes((mode || '').toLowerCase()) || !badge) {
+        return '📝 Format:\n<code>/setbadge generate BARU</code>\n\nKetik badge "off" buat menghapus.';
+      }
+      const m = mode.toLowerCase();
+      return await mutateSite(s => {
+        if (!s.modes) s.modes = {};
+        if (!s.modes[m]) s.modes[m] = { enabled: true, label: '', badge: '' };
+        s.modes[m].badge = badge.toLowerCase() === 'off' ? '' : badge;
+      }, `✅ Badge tab <b>${m}</b> diubah jadi:\n${badge.toLowerCase() === 'off' ? '(dihapus)' : escapeHtml(badge)}`);
+    }
+
+    // ================= [23-25] ADMIN TAMBAHAN =================
+    case '/addadmin': {
+      const id = (args[0] || '').trim();
+      if (!id || !/^-?\d+$/.test(id)) return '📝 Format:\n<code>/addadmin 123456789</code>\n\nChat ID bisa didapat dari @userinfobot.';
+      const { warning, sha } = await getSiteConfig();
+      if (!Array.isArray(warning.admins)) warning.admins = [];
+      if (warning.admins.map(String).includes(id)) return `⚠️ Chat ID <code>${id}</code> sudah jadi admin.`;
+      warning.admins.push(id);
+      warning.updatedAt = new Date().toISOString();
+      await saveSiteConfig(warning, sha, `Tambah admin ${id}`);
+      return `✅ Chat ID <code>${id}</code> berhasil ditambahkan sebagai admin bot.`;
+    }
+
+    case '/deladmin': {
+      const id = (args[0] || '').trim();
+      if (!id) return '📝 Format:\n<code>/deladmin 123456789</code>';
+      const { warning, sha } = await getSiteConfig();
+      warning.admins = (warning.admins || []).filter(a => String(a) !== id);
+      warning.updatedAt = new Date().toISOString();
+      await saveSiteConfig(warning, sha, `Hapus admin ${id}`);
+      return `🗑️ Chat ID <code>${id}</code> dihapus dari daftar admin tambahan.`;
+    }
+
+    case '/listadmin': {
+      const envIds = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+      const { warning } = await getSiteConfig();
+      const extra = warning.admins || [];
+      return (
+        `👑 <b>Daftar Admin Bot</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `<b>Admin utama (env):</b>\n${envIds.map(i => `• <code>${i}</code>`).join('\n') || '(kosong)'}\n\n` +
+        `<b>Admin tambahan (/addadmin):</b>\n${extra.map(i => `• <code>${i}</code>`).join('\n') || '(kosong)'}`
+      );
+    }
+
+    // ================= [26-27] KONFIGURASI =================
+    case '/getconfig': {
+      const { warning } = await getSiteConfig();
+      const json = JSON.stringify(warning.site, null, 2);
+      const trimmed = json.length > 3500 ? json.slice(0, 3500) + '\n...(dipotong)' : json;
+      return `⚙️ <b>Konfigurasi Website Saat Ini</b>\n━━━━━━━━━━━━━━\n<pre>${escapeHtml(trimmed)}</pre>`;
+    }
+
+    case '/resetconfig': {
+      const { sha } = await getSiteConfig();
+      const fresh = JSON.parse(JSON.stringify(DEFAULT_WARNING));
+      fresh.admins = (await getSiteConfig()).warning.admins || []; // jangan hapus daftar admin tambahan
+      fresh.updatedAt = new Date().toISOString();
+      await saveSiteConfig(fresh, sha, 'Reset konfigurasi website ke default');
+      return `🔄 <b>Semua konfigurasi tampilan website dikembalikan ke default.</b>\nToken seller & daftar admin TIDAK terhapus.`;
+    }
+
+    // ================= [28-29] BACKUP / RESTORE =================
+    case '/backup': {
+      const { warning } = await getSiteConfig();
+      const { tokens } = await getTokensFile();
+      const backup = { exportedAt: new Date().toISOString(), warning, tokens };
+      const json = JSON.stringify(backup, null, 2);
+      if (json.length <= 3800) {
+        return `💾 <b>Backup Konfigurasi Website</b>\n━━━━━━━━━━━━━━\n<pre>${escapeHtml(json)}</pre>\n\nSimpan JSON ini buat /restore kapan-kapan.`;
+      }
+      return (
+        `💾 <b>Backup terlalu besar buat dikirim sebagai teks.</b>\n` +
+        `Gunakan <code>/getconfig</code> buat lihat konfigurasi tampilan, atau minta developer export manual dari GitHub (file warning.json & tokens.json).`
+      );
+    }
+
+    // /restore ditangani terpisah di handler() karena butuh akses ke file upload.
+
+    // ================= [30] PENGUMUMAN POPUP =================
+    case '/setannouncement': {
+      const val = restArgs.trim();
+      if (!val) return '📝 Format:\n<code>/setannouncement Promo spesial bulan ini!</code>\n\nKetik <code>/setannouncement off</code> buat matikan.';
+      if (val.toLowerCase() === 'off') {
+        return await mutateSite(s => {
+          if (!s.announcement) s.announcement = {};
+          s.announcement.active = false;
+        }, `✅ Pengumuman popup dimatikan.`);
+      }
+      return await mutateSite(s => {
+        if (!s.announcement) s.announcement = {};
+        s.announcement.active = true;
+        s.announcement.text = val;
+      }, `📣 Pengumuman popup diaktifkan:\n${escapeHtml(val)}`);
+    }
+
+    // ================= KUSTOMISASI PROFIL BOT TELEGRAM =================
     case '/setbotname':
     case '/setname': {
       const name = args.join(' ').trim();
@@ -295,6 +559,65 @@ async function handleCommand(text, message, botToken) {
 
     default:
       return '❓ Perintah tidak dikenal. Ketik /help untuk lihat daftar perintah.';
+  }
+}
+
+// Helper generik: ambil site config, kasih fungsi mutator, simpan balik.
+async function mutateSite(mutatorFn, successMsg) {
+  const { warning, sha } = await getSiteConfig();
+  if (!warning.site) warning.site = {};
+  mutatorFn(warning.site);
+  warning.updatedAt = new Date().toISOString();
+  await saveSiteConfig(warning, sha, 'Update konfigurasi tampilan website');
+  return successMsg;
+}
+
+function isHexColor(v) {
+  return typeof v === 'string' && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(v.trim());
+}
+
+// /restore — pulihkan config dari file .json yang di-upload dengan caption /restore,
+// atau dari JSON mentah yang ditempel setelah command.
+async function handleRestore(message, botToken) {
+  try {
+    let raw;
+    if (message.document) {
+      const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${message.document.file_id}`);
+      const fileData = await fileRes.json();
+      if (!fileData.ok || !fileData.result?.file_path) {
+        throw new Error(`Gagal ambil file dari Telegram: ${fileData.description || 'Unknown error'}`);
+      }
+      const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+      const dlRes = await fetch(downloadUrl);
+      if (!dlRes.ok) throw new Error('Gagal mengunduh file backup.');
+      raw = await dlRes.text();
+    } else {
+      const text = (message.text || '').trim();
+      raw = text.replace(/^\/restore\s*/i, '').trim();
+    }
+
+    if (!raw) {
+      return (
+        `📝 <b>Cara Restore Konfigurasi:</b>\n\n` +
+        `1. Upload file .json hasil /backup dengan caption <code>/restore</code>\n` +
+        `2. Atau ketik <code>/restore {...json...}</code> langsung.`
+      );
+    }
+
+    const parsed = JSON.parse(raw);
+    const backupWarning = parsed.warning || parsed; // dukung format /backup (ada .warning) atau file warning.json langsung
+
+    const { sha } = await getSiteConfig();
+    await saveSiteConfig(backupWarning, sha, 'Restore konfigurasi website dari backup');
+
+    if (parsed.tokens) {
+      const { sha: tokensSha } = await getTokensFile();
+      await saveTokensFile(parsed.tokens, tokensSha, 'Restore token seller dari backup');
+    }
+
+    return `✅ <b>Konfigurasi website berhasil direstore dari backup.</b>`;
+  } catch (e) {
+    return `❌ Gagal restore: <code>${escapeHtml(e.message)}</code>`;
   }
 }
 
@@ -419,28 +742,33 @@ function helpText() {
   return (
     `✨ <b>ALIGHT MOTION PREMIUM — BOT ADMIN</b> ✨\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `<b>🔑 Kelola Token Seller</b>\n` +
-    `/addtoken TOKEN LIMIT — buat token baru\n` +
-    `/setlimit TOKEN LIMIT — ubah limit token\n` +
-    `/reset TOKEN — reset jumlah pemakaian\n` +
-    `/deltoken TOKEN — hapus token\n` +
-    `/listtoken — lihat semua token\n\n` +
-    `<b>🛠️ Mode Maintenance Website</b>\n` +
-    `/maintenance [pesan] — aktifkan mode maintenance\n` +
-    `/unmaintenance — matikan mode maintenance\n\n` +
-    `<b>📢 Banner Website</b>\n` +
-    `/warn pesan — banner kuning (peringatan)\n` +
-    `/danger pesan — banner merah (bahaya)\n` +
-    `/info pesan — banner biru (info)\n` +
-    `/clearwarn — sembunyikan banner\n` +
-    `/status — lihat status maintenance & banner\n\n` +
-    `<b>🤖 Pengaturan Profil Bot</b>\n` +
-    `/setbotname nama — ubah nama bot\n` +
-    `/setdescription deskripsi — ubah deskripsi bot\n` +
-    `/setshortdesc deskripsi — ubah deskripsi singkat bot\n` +
-    `/setprofile [URL] — ubah foto profil bot (bisa dengan upload foto)\n\n` +
-    `<i>Contoh: /maintenance Server sedang perbaikan</i>\n` +
-    `<i>Contoh: /setbotname Alight Motion Bot</i>`
+    `<b>🔑 Token Seller</b>\n` +
+    `/addtoken /setlimit /reset /deltoken /listtoken\n\n` +
+    `<b>🛠️ Maintenance & Banner</b>\n` +
+    `/maintenance /unmaintenance /warn /danger /info /clearwarn /status\n\n` +
+    `<b>🎨 Branding Website (1-6)</b>\n` +
+    `/setbrand /settagline /setfootertext /setfavicon /setlogo /settitle\n\n` +
+    `<b>🌈 Tema Warna (7-10)</b>\n` +
+    `/setprimarycolor /setaccentcolor /setbgcolor /resettheme\n\n` +
+    `<b>📞 Kontak (11-13)</b>\n` +
+    `/setwa /setwamsg /setsocial\n\n` +
+    `<b>🎉 Promo Banner (14-15)</b>\n` +
+    `/setpromo /clearpromo\n\n` +
+    `<b>📄 Konten Tambahan (16-18)</b>\n` +
+    `/setfaq /settestimoni /setstock\n\n` +
+    `<b>🔀 Mode Aktivasi (19-22)</b>\n` +
+    `/enablemode /disablemode /setmodelabel /setbadge\n\n` +
+    `<b>👑 Admin Tambahan (23-25)</b>\n` +
+    `/addadmin /deladmin /listadmin\n\n` +
+    `<b>⚙️ Konfigurasi (26-27)</b>\n` +
+    `/getconfig /resetconfig\n\n` +
+    `<b>💾 Backup/Restore (28-29)</b>\n` +
+    `/backup /restore\n\n` +
+    `<b>📣 Pengumuman (30)</b>\n` +
+    `/setannouncement\n\n` +
+    `<b>🤖 Profil Bot</b>\n` +
+    `/setbotname /setdescription /setshortdesc /setprofile\n\n` +
+    `<i>Ketik command tanpa argumen buat lihat contoh formatnya masing-masing.</i>`
   );
 }
 
