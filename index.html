@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alight Motion Premium — By Akira</title>
+    <title id="page-title">Alight Motion Premium — By Akira</title>
+    <link rel="icon" id="favicon-link" href="data:,">
 
     <!-- Axios CDN -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -16,11 +17,11 @@
             theme: {
                 extend: {
                     colors: {
-                        darkbg: '#0F1015',
+                        darkbg: 'var(--color-bg)',
                         darkcard: '#181A22',
-                        darkinput: '#0F1015',
-                        neonGreen: '#00E676',
-                        cyberYellow: '#FFD028',
+                        darkinput: 'var(--color-bg)',
+                        neonGreen: 'var(--color-accent)',
+                        cyberYellow: 'var(--color-primary)',
                         waGreen: '#25D366'
                     },
                     fontFamily: {
@@ -41,9 +42,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
 
     <style>
+        :root {
+            --color-primary: #FFD028;
+            --color-accent: #00E676;
+            --color-bg: #0F1015;
+        }
+
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: #0F1015;
+            background-color: var(--color-bg);
             color: #FFFFFF;
             position: relative;
         }
@@ -145,17 +152,6 @@
         .stagger-2 { animation: fadeUp 0.4s ease 0.2s both; }
         .stagger-3 { animation: fadeUp 0.4s ease 0.3s both; }
 
-        /* Glitch text effect for headings */
-        @keyframes glitch {
-            0%, 92%, 100% { text-shadow: none; transform: none; }
-            93% { text-shadow: 2px 0 #00E676, -2px 0 #FFD028; transform: translateX(-1px); }
-            94% { text-shadow: -2px 0 #00E676, 2px 0 #FFD028; transform: translateX(1px); }
-            95% { text-shadow: 1px 0 #00E676, -1px 0 #FFD028; transform: none; }
-        }
-        .glitch-text {
-            animation: glitch 5s infinite;
-        }
-
         /* Custom scrollbar for inbox lists */
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #0F1015; }
@@ -169,14 +165,14 @@
 
     <!-- OVERLAY MODE MAINTENANCE (dikontrol lewat /maintenance di Telegram bot) -->
     <div id="maintenance-overlay" class="fixed inset-0 bg-darkbg z-[200] hidden flex-col items-center justify-center p-6 text-center">
-        <div class="w-16 h-16 bg-cyberYellow border-3 border-black rounded-2xl flex items-center justify-center mx-auto mb-5 nb-shadow-lg">
-            <i class="fas fa-tools text-2xl text-black"></i>
+        <div class="relative w-20 h-20 mx-auto mb-5">
+            <img src="https://base44.app/api/apps/6a75119d8897b55540d7e5b4/files/mp/public/6a75119d8897b55540d7e5b4/e49d002b0_f3ee9cabd_36dcd09f2f8593db6fc7e1c52e3e0506.jpg" alt="Admin" class="w-20 h-20 rounded-full object-cover border-2 border-black nb-shadow">
+            <span class="absolute -bottom-1 -right-1 w-7 h-7 bg-cyberYellow border-2 border-black rounded-full flex items-center justify-center text-xs">🛠️</span>
         </div>
-        <h2 class="font-heading font-extrabold text-2xl text-cyberYellow uppercase tracking-wider mb-3">Sedang Maintenance</h2>
-        <p id="maintenance-message" class="text-sm font-semibold text-slate-300 max-w-sm mb-6">Website sedang dalam pemeliharaan. Silakan kembali lagi nanti.</p>
+        <h2 class="font-heading font-extrabold text-xl text-white tracking-tight mb-2">Bentar ya, lagi dibenerin</h2>
+        <p id="maintenance-message" class="text-sm font-medium text-slate-400 max-w-sm mb-5 leading-relaxed">Server sedang dirapikan sebentar. Coba buka lagi beberapa saat lagi ya.</p>
         <div class="inline-flex items-center gap-2 bg-darkcard border-2 border-black px-4 py-2 rounded-xl nb-shadow-sm">
-            <span class="w-2.5 h-2.5 rounded-full bg-neonGreen pulse-live"></span>
-            <span class="text-xs font-bold text-slate-400 uppercase">Estimasi selesai: Tidak diketahui</span>
+            <span id="maintenance-admin-name" class="text-xs font-bold text-slate-300">— Akira</span>
         </div>
         <p class="mt-8 text-[11px] text-slate-500 font-medium">&copy; Alight Motion Premium Activator</p>
     </div>
@@ -185,6 +181,12 @@
     <div id="site-warning-banner" class="hidden w-full max-w-md md:max-w-lg lg:max-w-xl mb-3 border-2.5 border-black rounded-xl p-3 px-4 nb-shadow font-bold text-sm flex items-start gap-2">
         <span id="site-warning-icon" class="text-lg leading-none"></span>
         <span id="site-warning-text" class="flex-1"></span>
+    </div>
+
+    <!-- BANNER PROMO (dikontrol lewat /setpromo di Telegram bot) -->
+    <div id="site-promo-banner" class="hidden w-full max-w-md md:max-w-lg lg:max-w-xl mb-3 bg-cyberYellow text-black border-2.5 border-black rounded-xl p-3 px-4 nb-shadow font-bold text-sm flex items-center gap-2">
+        <span class="text-lg leading-none">🎉</span>
+        <span id="site-promo-text" class="flex-1"></span>
     </div>
 
     <!-- HEADER / BRANDING -->
@@ -207,11 +209,17 @@
             </div>
 
             <div class="relative flex items-center font-heading font-extrabold text-2xl tracking-tight text-white">
-                <span class="glitch-text">ALIGHT</span>
-                <span class="bg-cyberYellow text-black border-2 border-black rounded-lg px-2 py-0.5 ml-2 text-xs font-black shadow-[2px_2px_0px_0px_#000]">PRO</span>
+                <span id="brand-name-text">ALIGHT</span>
+                <span id="brand-badge-text" class="bg-cyberYellow text-black border-2 border-black rounded-lg px-2 py-0.5 ml-2 text-xs font-black shadow-[2px_2px_0px_0px_#000]">PRO</span>
             </div>
         </div>
-        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Layanan Aktivasi Premium</p>
+        <p id="brand-tagline-text" class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Layanan Aktivasi Premium</p>
+
+        <!-- STOK (dikontrol lewat /setstock di Telegram bot) -->
+        <div id="site-stock-badge" class="hidden mt-2 inline-flex items-center gap-1.5 bg-darkcard border-2 border-black px-3 py-1 rounded-lg text-[10px] font-bold text-slate-300 uppercase tracking-wider nb-shadow-sm">
+            <i class="fas fa-box text-cyberYellow"></i>
+            <span id="site-stock-text"></span>
+        </div>
     </header>
 
     <!-- MAIN CONTAINER CARD -->
@@ -219,14 +227,17 @@
 
         <!-- MODE TAB SWITCHER -->
         <div class="grid grid-cols-3 gap-1.5 bg-darkcard p-1.5 border-2.5 border-black rounded-2xl nb-shadow">
-            <button type="button" id="tab-pribadi" onclick="requestMode('pribadi')" class="py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-cyberYellow text-black nb-shadow-sm cursor-pointer truncate">
-                <i class="fas fa-user mr-1"></i> PRIBADI
+            <button type="button" id="tab-pribadi" onclick="requestMode('pribadi')" class="relative py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-cyberYellow text-black nb-shadow-sm cursor-pointer truncate">
+                <i class="fas fa-user mr-1"></i> <span id="tab-pribadi-label">PRIBADI</span>
+                <span id="tab-pribadi-badge" class="hidden absolute -top-2 -right-1.5 bg-neonGreen text-black text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-black"></span>
             </button>
-            <button type="button" id="tab-generate" onclick="requestMode('generate')" class="py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-darkbg text-slate-400 cursor-pointer truncate">
-                <i class="fas fa-robot mr-1"></i> GENERATE
+            <button type="button" id="tab-generate" onclick="requestMode('generate')" class="relative py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-darkbg text-slate-400 cursor-pointer truncate">
+                <i class="fas fa-robot mr-1"></i> <span id="tab-generate-label">GENERATE</span>
+                <span id="tab-generate-badge" class="hidden absolute -top-2 -right-1.5 bg-neonGreen text-black text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-black"></span>
             </button>
-            <button type="button" id="tab-buyer" onclick="requestMode('buyer')" class="py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-darkbg text-slate-400 cursor-pointer truncate">
-                <i class="fas fa-key mr-1"></i> BUYER MAIL
+            <button type="button" id="tab-buyer" onclick="requestMode('buyer')" class="relative py-2.5 px-1 rounded-xl font-extrabold text-[11px] border-2 border-black transition-all bg-darkbg text-slate-400 cursor-pointer truncate">
+                <i class="fas fa-key mr-1"></i> <span id="tab-buyer-label">BUYER MAIL</span>
+                <span id="tab-buyer-badge" class="hidden absolute -top-2 -right-1.5 bg-neonGreen text-black text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-black"></span>
             </button>
         </div>
 
@@ -545,7 +556,7 @@
                 </div>
             </div>
 
-            <a href="https://wa.me/6281249578370?text=Halo%20Akira,%20saya%20butuh%20bantuan%20Alight%20Motion%20Premium" 
+            <a id="wa-link" href="https://wa.me/6281249578370?text=Halo%20Akira,%20saya%20butuh%20bantuan%20Alight%20Motion%20Premium" 
                target="_blank" 
                rel="noopener noreferrer"
                class="w-full sm:w-auto px-4 py-2.5 bg-waGreen hover:bg-emerald-500 text-black font-extrabold rounded-xl border-2 border-black text-xs nb-shadow-button flex items-center justify-center gap-2">
@@ -554,15 +565,31 @@
             </a>
         </div>
 
+        <!-- TESTIMONI (dikontrol lewat /settestimoni di Telegram bot) -->
+        <div id="site-testimoni-card" class="hidden bg-darkcard border-2 border-black rounded-2xl p-4 nb-shadow-sm relative overflow-hidden">
+            <i class="fas fa-quote-left absolute top-3 right-4 text-2xl text-cyberYellow/15"></i>
+            <p id="site-testimoni-text" class="text-xs font-semibold text-slate-300 leading-relaxed relative z-10"></p>
+        </div>
+
+        <!-- FAQ (dikontrol lewat /setfaq di Telegram bot) -->
+        <div id="site-faq-card" class="hidden bg-darkcard border-2 border-black rounded-2xl p-4 nb-shadow-sm">
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fas fa-circle-question text-cyberYellow text-sm"></i>
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">FAQ</span>
+            </div>
+            <p id="site-faq-text" class="text-xs font-medium text-slate-400 leading-relaxed whitespace-pre-line"></p>
+        </div>
+
     </main>
 
     <!-- FOOTER -->
     <footer class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-6 mb-2 text-center text-xs font-bold text-slate-400 space-y-2.5 relative z-10">
         <div class="inline-flex items-center gap-2 bg-darkcard text-slate-300 border-2 border-black px-3.5 py-1.5 rounded-xl font-bold text-[11px] nb-shadow-sm uppercase tracking-wider">
-            <span class="w-1.5 h-1.5 rounded-full bg-cyberYellow"></span>
-            <span>Created by <strong class="font-heading text-cyberYellow">AKIRA</strong></span>
-            <span class="w-1.5 h-1.5 rounded-full bg-neonGreen"></span>
+            <span id="footer-credit-text">Created by <strong class="font-heading text-cyberYellow">AKIRA</strong></span>
         </div>
+
+        <!-- SOCIAL LINKS (dikontrol lewat /setsocial di Telegram bot) -->
+        <div id="site-social-links" class="hidden items-center justify-center gap-2"></div>
 
         <p class="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">
             &copy; <span id="year"></span> Alight Motion Premium Activator
@@ -570,6 +597,20 @@
     </footer>
 
     <!-- INITIAL POPUP MODAL: "AKTIVASI DENGAN?" -->
+    <!-- POPUP PENGUMUMAN (dikontrol lewat /setannouncement di Telegram bot) -->
+    <div id="site-announcement-modal" class="hidden fixed inset-0 bg-black/85 backdrop-blur-md z-[150] items-center justify-center p-4">
+        <div class="bg-darkcard border-3 border-black p-6 rounded-2xl nb-shadow-lg text-center max-w-sm w-full relative modal-enter">
+            <div class="w-12 h-12 bg-cyberYellow border-2 border-black rounded-2xl flex items-center justify-center mx-auto mb-4 nb-shadow">
+                <i class="fas fa-bullhorn text-lg text-black"></i>
+            </div>
+            <h3 class="font-heading font-extrabold text-lg text-white uppercase tracking-wider mb-2">Pengumuman</h3>
+            <p id="site-announcement-text" class="text-sm font-medium text-slate-300 leading-relaxed mb-5"></p>
+            <button type="button" onclick="closeSiteAnnouncement()" class="w-full py-3 px-4 bg-cyberYellow border-2 border-black font-extrabold text-black rounded-xl text-sm nb-shadow-button uppercase tracking-wide cursor-pointer">
+                Oke, Paham
+            </button>
+        </div>
+    </div>
+
     <div id="initial-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
         <div class="bg-darkcard border-3 border-black p-6 sm:p-7 rounded-2xl nb-shadow-lg text-center max-w-sm md:max-w-md w-full relative overflow-hidden modal-enter">
             <!-- Decorative corner accents -->
@@ -586,11 +627,9 @@
 
             <!-- Title with glitch effect -->
             <div class="stagger-2">
-                <h3 class="font-heading font-extrabold text-xl text-white uppercase tracking-wider glitch-text">Aktivasi Dengan?</h3>
-                <div class="flex items-center justify-center gap-1.5 mt-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-neonGreen pulse-live"></span>
+                <h3 class="font-heading font-extrabold text-xl text-white uppercase tracking-wider">Aktivasi Dengan?</h3>
+                <div class="flex items-center justify-center mt-2">
                     <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Pilih metode aktivasi</p>
-                    <span class="w-1.5 h-1.5 rounded-full bg-neonGreen pulse-live"></span>
                 </div>
             </div>
 
@@ -1791,11 +1830,154 @@
         // Initialize default tutorial mode content
         updateTutorialContent('pribadi');
 
-        // ---- Banner peringatan & mode maintenance dari Telegram bot ----
+        // ---- Tutup popup pengumuman (dikontrol lewat /setannouncement) ----
+        function closeSiteAnnouncement() {
+            const modal = document.getElementById('site-announcement-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+            try { sessionStorage.setItem('announcementDismissed', '1'); } catch (e) {}
+        }
+
+        // ---- Terapkan konfigurasi tampilan website (dikontrol lewat bot Telegram) ----
+        function applySiteConfig(site) {
+            if (!site) return;
+
+            // Tema warna
+            const root = document.documentElement;
+            if (site.primaryColor) root.style.setProperty('--color-primary', site.primaryColor);
+            if (site.accentColor) root.style.setProperty('--color-accent', site.accentColor);
+            if (site.bgColor) root.style.setProperty('--color-bg', site.bgColor);
+
+            // Branding
+            if (site.brandName) {
+                const el = document.getElementById('brand-name-text');
+                if (el) el.textContent = site.brandName;
+            }
+            if (site.brandBadge) {
+                const el = document.getElementById('brand-badge-text');
+                if (el) el.textContent = site.brandBadge;
+            }
+            if (site.tagline) {
+                const el = document.getElementById('brand-tagline-text');
+                if (el) el.textContent = site.tagline;
+            }
+            if (site.footerText) {
+                const el = document.getElementById('footer-credit-text');
+                if (el) el.innerHTML = site.footerText;
+            }
+            if (site.pageTitle) {
+                document.title = site.pageTitle;
+                const el = document.getElementById('page-title');
+                if (el) el.textContent = site.pageTitle;
+            }
+            if (site.faviconUrl) {
+                const el = document.getElementById('favicon-link');
+                if (el) el.setAttribute('href', site.faviconUrl);
+            }
+            if (site.logoUrl) {
+                const logoBox = document.querySelector('header .relative.w-11.h-11');
+                if (logoBox) logoBox.innerHTML = `<img src="${site.logoUrl}" class="w-full h-full object-cover rounded-lg" alt="logo">`;
+            }
+
+            // Kontak WhatsApp
+            const waLink = document.getElementById('wa-link');
+            if (waLink && (site.waNumber || site.waMessage)) {
+                const num = site.waNumber || '6281249578370';
+                const msg = site.waMessage || '';
+                waLink.href = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+            }
+
+            // Stok
+            if (site.stock) {
+                const box = document.getElementById('site-stock-badge');
+                const text = document.getElementById('site-stock-text');
+                if (box && text) { text.textContent = site.stock; box.classList.remove('hidden'); box.classList.add('flex'); }
+            }
+
+            // Testimoni
+            if (site.testimoni) {
+                const box = document.getElementById('site-testimoni-card');
+                const text = document.getElementById('site-testimoni-text');
+                if (box && text) { text.textContent = site.testimoni; box.classList.remove('hidden'); }
+            }
+
+            // FAQ
+            if (site.faq) {
+                const box = document.getElementById('site-faq-card');
+                const text = document.getElementById('site-faq-text');
+                if (box && text) { text.textContent = site.faq; box.classList.remove('hidden'); }
+            }
+
+            // Promo banner
+            if (site.promo && site.promo.active && site.promo.text) {
+                const box = document.getElementById('site-promo-banner');
+                const text = document.getElementById('site-promo-text');
+                if (box && text) { text.textContent = site.promo.text; box.classList.remove('hidden'); box.classList.add('flex'); }
+            }
+
+            // Popup pengumuman (sekali per sesi)
+            if (site.announcement && site.announcement.active && site.announcement.text) {
+                let dismissed = false;
+                try { dismissed = sessionStorage.getItem('announcementDismissed') === '1'; } catch (e) {}
+                if (!dismissed) {
+                    const modal = document.getElementById('site-announcement-modal');
+                    const text = document.getElementById('site-announcement-text');
+                    if (modal && text) {
+                        text.textContent = site.announcement.text;
+                        modal.classList.remove('hidden');
+                        modal.classList.add('flex');
+                    }
+                }
+            }
+
+            // Social links
+            if (site.social && Object.keys(site.social).length > 0) {
+                const wrap = document.getElementById('site-social-links');
+                if (wrap) {
+                    const icons = {
+                        instagram: 'fa-instagram', tiktok: 'fa-tiktok', youtube: 'fa-youtube',
+                        facebook: 'fa-facebook', twitter: 'fa-x-twitter', x: 'fa-x-twitter',
+                        telegram: 'fa-telegram', whatsapp: 'fa-whatsapp', github: 'fa-github'
+                    };
+                    wrap.innerHTML = Object.entries(site.social).map(function([platform, url]) {
+                        const icon = icons[platform.toLowerCase()] || 'fa-link';
+                        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="w-8 h-8 flex items-center justify-center bg-darkcard border-2 border-black rounded-lg text-slate-300 hover:text-cyberYellow nb-shadow-sm text-xs"><i class="fab ${icon}"></i></a>`;
+                    }).join('');
+                    wrap.classList.remove('hidden');
+                    wrap.classList.add('flex');
+                }
+            }
+
+            // Mode aktivasi: enable/disable, label, badge
+            if (site.modes) {
+                Object.keys(site.modes).forEach(function(mode) {
+                    const cfg = site.modes[mode];
+                    if (!cfg) return;
+                    const tabBtn = document.getElementById('tab-' + mode);
+                    const labelEl = document.getElementById('tab-' + mode + '-label');
+                    const badgeEl = document.getElementById('tab-' + mode + '-badge');
+
+                    if (tabBtn && cfg.enabled === false) {
+                        tabBtn.style.display = 'none';
+                        if (tabBtn.classList.contains('bg-cyberYellow') && typeof requestMode === 'function') {
+                            const fallback = Object.keys(site.modes).find(function(m) { return m !== mode && site.modes[m] && site.modes[m].enabled !== false; });
+                            if (fallback) requestMode(fallback);
+                        }
+                    }
+                    if (labelEl && cfg.label) labelEl.textContent = cfg.label.toUpperCase();
+                    if (badgeEl && cfg.badge) { badgeEl.textContent = cfg.badge.toUpperCase(); badgeEl.classList.remove('hidden'); }
+                });
+            }
+        }
+
+        // ---- Banner peringatan, promo, konfigurasi tampilan & mode maintenance dari Telegram bot ----
         (async function loadSiteWarning() {
             try {
                 const res = await axios.get('/api/status');
                 const warning = res.data && res.data.warning;
+                const site = res.data && res.data.site;
 
                 // CEK MAINTENANCE DULU — kalau aktif, tampilkan overlay & sembunyikan UI
                 if (warning && warning.maintenance) {
@@ -1808,12 +1990,15 @@
                             msgEl.textContent = warning.maintenanceMessage;
                         }
                         // Sembunyikan semua elemen UI utama
-                        document.querySelectorAll('header, main, footer, #initial-modal, #seller-login-modal, #buyer-modal, #site-warning-banner').forEach(function(el) {
+                        document.querySelectorAll('header, main, footer, #initial-modal, #seller-login-modal, #buyer-modal, #site-warning-banner, #site-promo-banner, #site-announcement-modal').forEach(function(el) {
                             el.style.display = 'none';
                         });
                     }
-                    return; // Jangan lanjut ke banner kalau sedang maintenance
+                    return; // Jangan lanjut ke banner/config kalau sedang maintenance
                 }
+
+                // Terapkan konfigurasi tampilan/konten website
+                applySiteConfig(site);
 
                 // Auto-poll: kalau sedang maintenance, cek tiap 30s. Kalau sudah normal → reload otomatis
                 if (!window.__maintenancePolling) {
