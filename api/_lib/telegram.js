@@ -14,28 +14,10 @@ function getClientIp(req) {
   return req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown';
 }
 
-async function notifyTelegram(req, { action, detail = {} }) {
+async function sendRaw(text) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  // Kalau belum di-setup, diam-diam skip (jangan bikin request lain gagal).
   if (!botToken || !chatId) return;
-
-  const ip = getClientIp(req);
-  const ua = req.headers['user-agent'] || '-';
-  const time = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-
-  const detailLines = Object.entries(detail)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => `<b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}`)
-    .join('\n');
-
-  const text =
-    `🔔 <b>${escapeHtml(action)}</b>\n` +
-    `<b>Waktu:</b> ${escapeHtml(time)} WIB\n` +
-    `<b>IP:</b> <code>${escapeHtml(ip)}</code>\n` +
-    `<b>User-Agent:</b> ${escapeHtml(ua)}\n` +
-    (detailLines ? `\n${detailLines}` : '');
 
   try {
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -54,11 +36,56 @@ async function notifyTelegram(req, { action, detail = {} }) {
   }
 }
 
+// Notifikasi transaksi/aktivitas normal (bukan error).
+async function notifyTelegram(req, { action, detail = {} }) {
+  const ip = getClientIp(req);
+  const ua = req.headers['user-agent'] || '-';
+  const time = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+
+  const detailLines = Object.entries(detail)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `<b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}`)
+    .join('\n');
+
+  const text =
+    `🔔 <b>${escapeHtml(action)}</b>\n` +
+    `<b>Waktu:</b> ${escapeHtml(time)} WIB\n` +
+    `<b>IP:</b> <code>${escapeHtml(ip)}</code>\n` +
+    `<b>User-Agent:</b> ${escapeHtml(ua)}\n` +
+    (detailLines ? `\n${detailLines}` : '');
+
+  await sendRaw(text);
+}
+
+// Notifikasi khusus error/gagal — isi pesan error asli biar gampang di-debug.
+async function notifyError(req, { action, error, extra = {} }) {
+  const ip = getClientIp(req);
+  const ua = req.headers['user-agent'] || '-';
+  const time = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+
+  const errMsg = (error && error.message) ? error.message : String(error);
+
+  const extraLines = Object.entries(extra)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `<b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}`)
+    .join('\n');
+
+  const text =
+    `🔴 <b>ERROR: ${escapeHtml(action)}</b>\n` +
+    `<b>Waktu:</b> ${escapeHtml(time)} WIB\n` +
+    `<b>IP:</b> <code>${escapeHtml(ip)}</code>\n` +
+    `<b>User-Agent:</b> ${escapeHtml(ua)}\n` +
+    (extraLines ? `${extraLines}\n` : '') +
+    `\n<b>Pesan Error:</b>\n<code>${escapeHtml(errMsg)}</code>`;
+
+  await sendRaw(text);
+}
+
 function escapeHtml(str) {
-  return str
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
 
-export { notifyTelegram, getClientIp };
+export { notifyTelegram, notifyError, getClientIp };
