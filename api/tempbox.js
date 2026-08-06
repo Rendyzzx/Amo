@@ -2,6 +2,7 @@
 // Sama seperti tempail.js — endpoint upstream disembunyikan dari client.
 
 import { notifyTelegram, notifyError } from './_lib/telegram.js';
+import { safeJson } from './_lib/http.js';
 
 const HEADERS = { 'user-agent': 'NB Android/1.0.0' };
 
@@ -18,7 +19,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: HEADERS
       });
-      const data = await upstreamRes.json();
+      const data = await safeJson(upstreamRes, 'Tempbox');
 
       if (!upstreamRes.ok || !data.address) {
         await notifyError(req, {
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
       const upstreamRes = await fetch(`https://api.tempmail.lol/v2/inbox?token=${encodeURIComponent(token)}`, {
         headers: HEADERS
       });
-      const data = await upstreamRes.json();
+      const data = await safeJson(upstreamRes, 'Tempbox');
 
       if (!upstreamRes.ok) {
         await notifyError(req, {
@@ -63,7 +64,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'action tidak valid' });
     }
   } catch (e) {
-    await notifyError(req, { action: `Tempbox (action=${action || '-'})`, error: e });
+    await notifyError(req, {
+      action: `Tempbox (action=${action || '-'})`,
+      error: e,
+      extra: { 'HTTP Status Upstream': e.httpStatus }
+    });
     return res.status(500).json({ success: false, error: 'Gagal menghubungi server email.' });
   }
 }

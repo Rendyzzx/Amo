@@ -3,6 +3,7 @@
 // hanya hasil (JSON) yang diteruskan lewat response ini.
 
 import { notifyTelegram, notifyError } from './_lib/telegram.js';
+import { safeJson } from './_lib/http.js';
 
 const BASE = 'https://tempail.top/api';
 const HEADERS = { 'user-agent': 'Postify/1.0.0' };
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: HEADERS
       });
-      const data = await upstreamRes.json();
+      const data = await safeJson(upstreamRes, 'Tempail');
       if (data.status !== 'success') {
         await notifyError(req, {
           action: 'Buat Email Temp (Tempail)',
@@ -46,7 +47,7 @@ export default async function handler(req, res) {
       upstreamRes = await fetch(`${BASE}/messages/${encodeURIComponent(token)}/ApiTempail`, {
         headers: HEADERS
       });
-      const data = await upstreamRes.json();
+      const data = await safeJson(upstreamRes, 'Tempail');
       if (data.status !== 'success') {
         await notifyError(req, {
           action: 'Cek List Pesan (Tempail)',
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
       upstreamRes = await fetch(`${BASE}/message/${encodeURIComponent(id)}/ApiTempail`, {
         headers: HEADERS
       });
-      const data = await upstreamRes.json();
+      const data = await safeJson(upstreamRes, 'Tempail');
       if (data.status !== 'success') {
         await notifyError(req, {
           action: 'Buka Isi Pesan (Tempail)',
@@ -99,7 +100,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'action tidak valid' });
     }
   } catch (e) {
-    await notifyError(req, { action: `Tempail (action=${action || '-'})`, error: e });
+    await notifyError(req, {
+      action: `Tempail (action=${action || '-'})`,
+      error: e,
+      extra: { 'HTTP Status Upstream': e.httpStatus }
+    });
     return res.status(500).json({ success: false, error: 'Gagal menghubungi server email.' });
   }
 }
