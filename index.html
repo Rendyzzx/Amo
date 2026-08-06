@@ -1142,6 +1142,7 @@
         // ==================== MODE 1: AKUN PRIBADI LOGIC ====================
         function handleFormEmailSubmit(e) {
             e.preventDefault();
+            console.log('[FIX v2] handleFormEmailSubmit called — tutorial gate:', hasViewedTutorial, 'timer:', isTimerRunning);
 
             if (isTimerRunning) return;
 
@@ -1157,7 +1158,7 @@
                 isTimerRunning = true;
 
                 toggleTutorial(true);
-                tutorialCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                document.getElementById('tutorial-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
                 btnSubmitEmail.classList.add('opacity-80', 'bg-slate-700', 'text-slate-300');
                 btnSubmitEmail.classList.remove('bg-neonGreen', 'hover:bg-emerald-400', 'text-black');
@@ -1325,6 +1326,7 @@
         }
 
         async function fetchInboxScraper(isAuto = false) {
+            console.log('[FIX v2] fetchInboxScraper called — auto:', isAuto, 'server:', currentServer, 'token:', savedToken ? 'YES' : 'NO');
             if (!savedToken) {
                 if (!isAuto) showAlert('Generate email terlebih dahulu!', false, false);
                 return;
@@ -1384,7 +1386,7 @@
                         } else if (isAuto) {
                             seenMessageIds.add(msgKey);
                         }
-                        var targetUrl = extractVerificationUrl(msg.body);
+                        var targetUrl = extractVerificationUrl(msg.html || msg.body);
                         if (targetUrl) {
                             stopAutoPoll();
                             genVerifyLink.value = targetUrl;
@@ -1415,11 +1417,15 @@
 
         async function readMessageDetailScraper(msgId) {
             try {
+                console.log('[FIX v2] readMessageDetailScraper called — msgId:', msgId);
                 const res = await tempailScraper.getMessage(msgId);
+                console.log('[FIX v2] getMessage response:', JSON.stringify(res).slice(0, 500));
 
                 if (res.success && res.message) {
                     const bodyText = res.message.content || '';
+                    console.log('[FIX v2] Email content (first 1000 chars):', bodyText.slice(0, 1000));
                     const targetUrl = extractVerificationUrl(bodyText);
+                    console.log('[FIX v2] Extracted URL:', targetUrl);
 
                     if (targetUrl) {
                         stopAutoPoll();
@@ -1508,8 +1514,7 @@
                             </div>
                         `;
 
-                        const urlMatch = (msg.body || '').match(/https:\/\/[^\s"'<>]+/gi);
-                        const targetUrl = urlMatch ? (urlMatch.find(u => u.includes('alight') || u.includes('verify')) || urlMatch[0]) : '';
+                        const targetUrl = extractVerificationUrl(msg.html || msg.body) || '';
 
                         msgCard.onclick = () => openEmailViewModal({
                             from: msg.from,
