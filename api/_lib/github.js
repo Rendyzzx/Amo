@@ -1,14 +1,16 @@
 // Helper baca & tulis file JSON di repo GitHub (Contents API).
-// Dipakai untuk tokens.json (kelola token seller) dan warning.json (konfigurasi
-// umum website: banner peringatan, maintenance, branding, warna, kontak,
-// promo, mode aktivasi, admin tambahan, dll — semuanya dikontrol dari bot Telegram).
+// Dipakai untuk tokens.json (kelola token seller), warning.json (konfigurasi
+// umum website), dan freemium.json (tracking request gratis per IP).
 //
 // Env var yang dibutuhkan:
-//   GITHUB_TOKENS_PATH  = username/repo/branch/path/ke/tokens.json
-//   GITHUB_WARNING_PATH = username/repo/branch/path/ke/warning.json
-//                         (opsional — kalau kosong, otomatis pakai repo/branch
-//                          yang sama dengan GITHUB_TOKENS_PATH + nama file warning.json)
-//   GITHUB_PAT          = Personal Access Token dengan scope "repo" (READ + WRITE)
+//   GITHUB_TOKENS_PATH   = username/repo/branch/path/ke/tokens.json
+//   GITHUB_WARNING_PATH  = username/repo/branch/path/ke/warning.json
+//                          (opsional — kalau kosong, otomatis pakai repo/branch
+//                           yang sama dengan GITHUB_TOKENS_PATH + nama file warning.json)
+//   GITHUB_FREEMIUM_PATH = username/repo/branch/path/ke/freemium.json
+//                          (opsional — kalau kosong, otomatis pakai repo/branch
+//                           yang sama dengan GITHUB_TOKENS_PATH + nama file freemium.json)
+//   GITHUB_PAT           = Personal Access Token dengan scope "repo" (READ + WRITE)
 
 function parsePath(envValue, envName) {
   if (!envValue) throw new Error(`${envName} belum diset di Environment Variables.`);
@@ -32,6 +34,15 @@ function parseWarningPath() {
   // Fallback: pakai owner/repo/branch yang sama dengan tokens, file warning.json.
   const { owner, repo, branch } = parseTokensPath();
   return { owner, repo, branch, filePath: 'warning.json' };
+}
+
+function parseFreemiumPath() {
+  if (process.env.GITHUB_FREEMIUM_PATH) {
+    return parsePath(process.env.GITHUB_FREEMIUM_PATH, 'GITHUB_FREEMIUM_PATH');
+  }
+  // Fallback: pakai owner/repo/branch yang sama dengan tokens, file freemium.json.
+  const { owner, repo, branch } = parseTokensPath();
+  return { owner, repo, branch, filePath: 'freemium.json' };
 }
 
 function ghHeaders() {
@@ -210,6 +221,154 @@ async function saveWarningFile(warning, sha, commitMessage) {
   return saveJsonFile(loc, warning, sha, commitMessage);
 }
 
+// ---- Wrapper khusus freemium.json (tracking request gratis per IP) ----
+// Format freemium.json:
+//   { "visitors": { "1.2.3.4": { "count": 3, "date": "2026-08-07" } } }
+// count di-reset tiap hari (tanggal UTC). Limit default 10 request gratis.
+
+const DEFAULT_FREEMIUM = { visitors: {} };
+
+async function getFreemiumFile() {
+  const loc = parseFreemiumPath();
+  const { data, sha } = await getJsonFile(loc, DEFAULT_FREEMIUM);
+  return { visitors: data.visitors || {}, sha };
+}
+
+async function saveFreemiumFile(visitors, sha, commitMessage) {
+  const loc = parseFreemiumPath();
+  return saveJsonFile(loc, { visitors }, sha, commitMessage);
+}
+
+
+// ---- Wrapper khusus services.json (daftar layanan untuk portal superapp) ----
+// Format services.json:
+//   { "services": [ { "id": "alightmotion", "name": "Alight Motion", "description": "...",
+//      "icon": "fa-bolt", "color": "#FFD028", "page": "/alightmotion.html",
+//      "locked": false, "lockMessage": "", "order": 0 } ] }
+
+const DEFAULT_SERVICES = {
+  services: [
+    {
+      id: 'alightmotion',
+      name: 'Alight Motion Premium',
+      description: 'Layanan aktivasi premium Alight Motion',
+      icon: 'fa-bolt',
+      color: '#FFD028',
+      page: '/alightmotion.html',
+      locked: false,
+      lockMessage: '',
+      order: 0
+    }
+  ]
+};
+
+function parseServicesPath() {
+  if (process.env.GITHUB_SERVICES_PATH) {
+    return parsePath(process.env.GITHUB_SERVICES_PATH, 'GITHUB_SERVICES_PATH');
+  }
+  // Fallback: pakai owner/repo/branch yang sama dengan tokens, file services.json
+  const { owner, repo, branch } = parseTokensPath();
+  return { owner, repo, branch, filePath: 'services.json' };
+}
+
+async function getServicesFile() {
+  const loc = parseServicesPath();
+  const { data, sha } = await getJsonFile(loc, DEFAULT_SERVICES);
+  return { services: data.services || [], sha };
+}
+
+async function saveServicesFile(services, sha, commitMessage) {
+  const loc = parseServicesPath();
+  return saveJsonFile(loc, { services }, sha, commitMessage);
+}
+
+
+// ---- Generic file operations (untuk api/*.js dan *.html) ----
+// File kode (API + HTML) bisa di repo yang BERBEDA dengan file data
+// (tokens.json, services.json, dll).
+// Set GITHUB_PROJECT_PATH = username/repo/branch kalau repo kode beda
+// dengan repo data. Kalau kosong, otomatis pakai repo/branch yang sama
+// dengan GITHUB_TOKENS_PATH.
+
+function parseProjectPath() {
+  if (process.env.GITHUB_PROJECT_PATH) {
+    const parts = process.env.GITHUB_PROJECT_PATH.split('/');
+    const [owner, repo, branch] = parts;
+    if (!owner || !repo || !branch) {
+      throw new Error('Format GITHUB_PROJECT_PATH salah. Contoh: Rendyzzx/Amo/main');
+    }
+    return { owner, repo, branch };
+  }
+  // Fallback: pakai owner/repo/branch yang sama dengan tokens
+  const { owner, repo, branch } = parseTokensPath();
+  return { owner, repo, branch };
+}
+
+async function getProjectFile(filePath) {
+  const { owner, repo, branch } = parseProjectPath();
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
+  const r = await fetch(apiUrl, { headers: ghHeaders() });
+  if (r.status === 404) return { content: null, sha: null };
+  if (!r.ok) throw new Error(`Gagal ambil ${filePath} dari GitHub.`);
+  const resp = await r.json();
+  const text = Buffer.from(resp.content, 'base64').toString('utf-8');
+  return { content: text, sha: resp.sha };
+}
+
+async function saveProjectFile(filePath, textContent, sha, commitMessage) {
+  const { owner, repo, branch } = parseProjectPath();
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+  const content = Buffer.from(textContent, 'utf-8').toString('base64');
+  const body = {
+    message: commitMessage || `Update ${filePath}`,
+    content,
+    branch
+  };
+  if (sha) body.sha = sha;
+  const r = await fetch(apiUrl, {
+    method: 'PUT',
+    headers: { ...ghHeaders(), 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const errBody = await r.text();
+    throw new Error(`Gagal simpan ${filePath} ke GitHub: ${errBody}`);
+  }
+  const data = await r.json();
+  return data.content.sha;
+}
+
+async function deleteProjectFile(filePath, sha, commitMessage) {
+  const { owner, repo, branch } = parseProjectPath();
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+  const body = {
+    message: commitMessage || `Hapus ${filePath}`,
+    sha,
+    branch
+  };
+  const r = await fetch(apiUrl, {
+    method: 'DELETE',
+    headers: { ...ghHeaders(), 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const errBody = await r.text();
+    throw new Error(`Gagal hapus ${filePath} dari GitHub: ${errBody}`);
+  }
+  return true;
+}
+
+async function listProjectFiles(dirPath) {
+  const { owner, repo, branch } = parseProjectPath();
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}?ref=${branch}`;
+  const r = await fetch(apiUrl, { headers: ghHeaders() });
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`Gagal list ${dirPath} dari GitHub.`);
+  const resp = await r.json();
+  if (!Array.isArray(resp)) return [];
+  return resp.map(item => ({ name: item.name, path: item.path, type: item.type, size: item.size }));
+}
+
 // Alias semantik — dipakai di command-command "kelola tampilan website"
 // supaya kodenya lebih jelas dibaca (secara teknis file & isinya sama).
 const getSiteConfig = getWarningFile;
@@ -222,5 +381,13 @@ export {
   saveWarningFile,
   getSiteConfig,
   saveSiteConfig,
-  DEFAULT_WARNING
+  DEFAULT_WARNING,
+  getFreemiumFile,
+  saveFreemiumFile,
+  getServicesFile,
+  saveServicesFile,
+  getProjectFile,
+  saveProjectFile,
+  deleteProjectFile,
+  listProjectFiles
 };
