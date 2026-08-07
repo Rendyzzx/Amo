@@ -32,7 +32,9 @@ import {
   getProjectFile,
   saveProjectFile,
   deleteProjectFile,
-  listProjectFiles
+  listProjectFiles,
+  saveProjectBinaryFile,
+  buildRawGithubUrl
 } from './_lib/github.js';
 
 // Banner gambar buat mempercantik bot. Bisa diganti ke URL gambar sendiri
@@ -68,9 +70,14 @@ export default async function handler(req, res) {
   const cmd = (text.split(/\s+/)[0] || '').toLowerCase();
 
   try {
-    // /start dan /help dikirim dengan gambar banner biar lebih "wah".
+    // /start dan /help dikirim dengan gambar banner, tapi ada fallback teks.
     if (cmd === '/start' || cmd === '/help') {
-      await sendPhoto(botToken, chatId, BANNER_IMAGE_URL, helpText());
+      const helpMsg = helpText();
+      try {
+        await sendPhoto(botToken, chatId, BANNER_IMAGE_URL, helpMsg);
+      } catch {
+        await sendMessage(botToken, chatId, helpMsg);
+      }
       return res.status(200).json({ ok: true });
     }
 
@@ -285,7 +292,7 @@ async function handleCommand(text, message, botToken) {
     // ================= [1-6] BRANDING WEBSITE =================
     case '/setbrand': {
       const val = restArgs.trim();
-      if (!val) return '📝 Format:\n<code>/setbrand ALIGHT</code>';
+      if (!val) return '📝 Format:\n<code>/setbrand Cyronime</code>';
       return await mutateSite(s => { s.brandName = val; }, `✅ Nama brand diubah jadi <b>${escapeHtml(val)}</b>.`);
     }
 
@@ -308,9 +315,70 @@ async function handleCommand(text, message, botToken) {
     }
 
     case '/setlogo': {
-      const url = args[0];
-      if (!url) return '📝 Format:\n<code>/setlogo https://domain.com/logo.png</code>\n\nKetik <code>/setlogo reset</code> buat balik ke logo default.';
-      return await mutateSite(s => { s.logoUrl = url === 'reset' ? '' : url; }, `✅ Logo website diubah.`);
+      const urlArg = args[0];
+      if (urlArg === 'reset') {
+        return await mutateSite(s => { s.logoUrl = ''; }, `🔄 Logo dikembalikan ke default (huruf inisial brand).`);
+      }
+      if (message.photo) {
+        const rawUrl = await uploadTelegramPhotoToGithub(botToken, message, 'assets/logo');
+        return await mutateSite(s => { s.logoUrl = rawUrl; }, `✅ <b>Logo website diperbarui</b> dari foto yang kamu kirim.\n<code>${rawUrl}</code>`);
+      }
+      if (!urlArg) {
+        return (
+          '📝 <b>Cara Ganti Logo:</b>\n\n' +
+          '1. Kirim foto dengan caption <code>/setlogo</code>\n' +
+          '2. Atau ketik <code>/setlogo https://domain.com/logo.png</code>\n' +
+          '3. Ketik <code>/setlogo reset</code> buat balik ke huruf inisial brand.'
+        );
+      }
+      return await mutateSite(s => { s.logoUrl = urlArg; }, `✅ Logo website diubah.`);
+    }
+
+    case '/seticon': {
+      const id = (args[0] || '').toLowerCase();
+      if (!id) {
+        return (
+          '📝 <b>Cara Ganti Icon Layanan:</b>\n\n' +
+          'Kirim foto dengan caption:\n<code>/seticon id-layanan</code>\n\n' +
+          'Contoh: kirim foto lalu tulis caption <code>/seticon capcut-pro</code>\n\n' +
+          'Ketik /listservice buat lihat ID layanan.'
+        );
+      }
+      if (!message.photo) {
+        return `⚠️ Kirim <b>foto</b> (bukan file dokumen) dengan caption <code>/seticon ${escapeHtml(id)}</code>`;
+      }
+
+      const { services, sha } = await getServicesFile();
+      const idx = services.findIndex(s => s.id === id);
+      if (idx === -1) return `⚠️ Layanan <code>${id}</code> tidak ditemukan.\n\nKetik /listservice buat lihat daftar.`;
+
+      const rawUrl = await uploadTelegramPhotoToGithub(botToken, message, `assets/icons/${id}`);
+      services[idx].icon = rawUrl;
+      await saveServicesFile(services, sha, `Update icon layanan: ${id}`);
+
+      return (
+        `🖼️ <b>Icon Layanan Diperbarui</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `ID    : <code>${id}</code>\n` +
+        `Icon  : <code>${rawUrl}</code>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `Refresh portal buat lihat icon baru.`
+      );
+    }
+
+    case '/sethero': {
+      if (args[0] === 'reset' || args[0] === 'hapus') {
+        return await mutateSite(s => { s.heroImage = ''; }, `🔄 Background header dikembalikan ke default.`);
+      }
+      if (!message.photo) {
+        return (
+          '📝 <b>Cara Ganti Background Header:</b>\n\n' +
+          'Kirim foto dengan caption <code>/sethero</code>\n\n' +
+          'Ketik <code>/sethero reset</code> buat balik ke default.'
+        );
+      }
+      const rawUrl = await uploadTelegramPhotoToGithub(botToken, message, 'assets/hero');
+      return await mutateSite(s => { s.heroImage = rawUrl; }, `🖼️ <b>Background header berhasil diperbarui!</b>\nRefresh website buat lihat perubahan.\n<code>${rawUrl}</code>`);
     }
 
     case '/settitle': {
@@ -322,13 +390,13 @@ async function handleCommand(text, message, botToken) {
     // ================= [7-10] TEMA WARNA =================
     case '/setprimarycolor': {
       const hex = args[0];
-      if (!isHexColor(hex)) return '📝 Format:\n<code>/setprimarycolor #FFD028</code>\n\nHarus kode warna hex, contoh: #FFD028';
+      if (!isHexColor(hex)) return '📝 Format:\n<code>/setprimarycolor #D6A755</code>\n\nHarus kode warna hex, contoh: #D6A755';
       return await mutateSite(s => { s.primaryColor = hex; }, `✅ Warna utama (kuning) diubah jadi <b>${hex}</b>.`);
     }
 
     case '/setaccentcolor': {
       const hex = args[0];
-      if (!isHexColor(hex)) return '📝 Format:\n<code>/setaccentcolor #00E676</code>\n\nHarus kode warna hex, contoh: #00E676';
+      if (!isHexColor(hex)) return '📝 Format:\n<code>/setaccentcolor #5C8AA6</code>\n\nHarus kode warna hex, contoh: #5C8AA6';
       return await mutateSite(s => { s.accentColor = hex; }, `✅ Warna aksen (hijau) diubah jadi <b>${hex}</b>.`);
     }
 
@@ -527,7 +595,7 @@ async function handleCommand(text, message, botToken) {
         description: description || '',
         page,
         icon: icon || 'fa-globe',
-        color: isHexColor(color) ? color : '#FFD028',
+        color: isHexColor(color) ? color : '#D6A755',
         locked: false,
         lockMessage: '',
         order: services.length
@@ -541,7 +609,7 @@ async function handleCommand(text, message, botToken) {
         `Nama  : ${escapeHtml(name)}\n` +
         `Halaman: <code>${escapeHtml(page)}</code>\n` +
         `Icon  : ${icon || 'fa-globe'}\n` +
-        `Warna : ${isHexColor(color) ? color : '#FFD028'}\n` +
+        `Warna : ${isHexColor(color) ? color : '#D6A755'}\n` +
         `━━━━━━━━━━━━━━\n` +
         `Layanan sudah tampil di portal.`
       );
@@ -604,7 +672,7 @@ async function handleCommand(text, message, botToken) {
 
       const lines = services.map((s, i) => {
         const lock = s.locked ? ' 🔒' : '';
-        const colorDot = s.color || '#FFD028';
+        const colorDot = s.color || '#D6A755';
         return `${i + 1}. <code>${s.id}</code>${lock}\n   📛 ${escapeHtml(s.name)}\n   📄 ${escapeHtml(s.description || '-')}\n   🎨 <code>${colorDot}</code> | ${s.icon || 'fa-globe'}`;
       });
       return `📋 <b>Daftar Layanan</b> (${services.length})\n━━━━━━━━━━━━━━\n${lines.join('\n\n')}`;
@@ -831,6 +899,41 @@ function isHexColor(v) {
 
 // /restore — pulihkan config dari file .json yang di-upload dengan caption /restore,
 // atau dari JSON mentah yang ditempel setelah command.
+// Upload foto yang dikirim admin di Telegram ke repo GitHub (folder assets/),
+// lalu balikin raw.githubusercontent.com URL-nya buat dipakai di website.
+async function uploadTelegramPhotoToGithub(botToken, message, destPathBase) {
+  if (!message.photo || !Array.isArray(message.photo) || message.photo.length === 0) {
+    throw new Error('Tidak ada foto yang dikirim. Kirim sebagai FOTO (bukan file dokumen), dengan caption command ini.');
+  }
+  const largestPhoto = message.photo[message.photo.length - 1];
+  const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${largestPhoto.file_id}`);
+  const fileData = await fileRes.json();
+  if (!fileData.ok || !fileData.result?.file_path) {
+    throw new Error(`Gagal ambil file dari Telegram: ${fileData.description || 'Unknown error'}`);
+  }
+
+  const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+  const imgRes = await fetch(downloadUrl);
+  if (!imgRes.ok) throw new Error('Gagal mengunduh foto dari server Telegram.');
+  const arrayBuffer = await imgRes.arrayBuffer();
+
+  const extMatch = fileData.result.file_path.split('.').pop();
+  const ext = (extMatch && extMatch.length <= 5 ? extMatch : 'jpg').toLowerCase();
+  const filePath = `${destPathBase}.${ext}`;
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
+
+  let existingSha = null;
+  try {
+    const existing = await getProjectFile(filePath);
+    existingSha = existing.sha;
+  } catch {
+    // Belum ada file sebelumnya, biarkan sha null (buat file baru).
+  }
+
+  await saveProjectBinaryFile(filePath, base64, existingSha, `Upload gambar: ${filePath}`);
+  return buildRawGithubUrl(filePath);
+}
+
 async function handleRestore(message, botToken) {
   try {
     let raw;
@@ -993,7 +1096,7 @@ function escapeHtml(str) {
 
 function helpText() {
   return (
-    `✨ <b>ALIGHT MOTION PREMIUM — BOT ADMIN</b> ✨\n` +
+    `✨ <b>CYRONIME — BOT ADMIN</b> ✨\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
     `<b>🔑 Token Seller</b>\n` +
     `/addtoken /setlimit /reset /deltoken /listtoken\n\n` +
@@ -1001,6 +1104,8 @@ function helpText() {
     `/maintenance /unmaintenance /warn /danger /info /clearwarn /status\n\n` +
     `<b>🎨 Branding Website (1-6)</b>\n` +
     `/setbrand /settagline /setfootertext /setfavicon /setlogo /settitle\n\n` +
+    `<b>🖼️ Gambar (Logo, Header, Icon Layanan)</b>\n` +
+    `/setlogo /sethero /seticon\n\n` +
     `<b>🌈 Tema Warna (7-10)</b>\n` +
     `/setprimarycolor /setaccentcolor /setbgcolor /resettheme\n\n` +
     `<b>📞 Kontak (11-13)</b>\n` +
@@ -1038,9 +1143,17 @@ async function sendMessage(botToken, chatId, text) {
 }
 
 async function sendPhoto(botToken, chatId, photoUrl, caption) {
-  await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption, parse_mode: 'HTML' })
-  });
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption, parse_mode: 'HTML' })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.description || 'sendPhoto failed');
+  } catch (e) {
+    // Kalau foto gagal kirim, fallback ke teks saja biar user tetap dapat respon
+    console.error('sendPhoto gagal, fallback ke sendMessage:', e.message);
+    await sendMessage(botToken, chatId, caption || 'Gagal mengirim foto.');
+  }
 }
