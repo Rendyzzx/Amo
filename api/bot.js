@@ -89,6 +89,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    // /uploadfile bisa dikirim sebagai caption pada file dokumen — tangani sebelum
+    // parsing teks biasa karena butuh akses ke message.document.
+    if (cmd === '/uploadfile' || cmd === '/upload') {
+      const reply = await handleUploadFile(message, botToken);
+      await sendMessage(botToken, chatId, reply);
+      return res.status(200).json({ ok: true });
+    }
+
     const reply = await handleCommand(text, message, botToken);
     await sendMessage(botToken, chatId, reply);
   } catch (e) {
@@ -787,7 +795,31 @@ async function handleCommand(text, message, botToken) {
       ].join('\n');
 
       await saveProjectFile(filePath, html, null, `Tambah halaman: ${name}.html`);
-      return `✅ <b>Halaman HTML Dibuat</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\n━━━━━━━━━━━━━━\nHalaman punya tombol "Kembali ke Portal".\nEdit langsung di repo GitHub atau Vercel dashboard.`;
+
+      // Auto-add service entry ke services.json supaya langsung tampil di portal
+      try {
+        const { services, sha: svcSha } = await getServicesFile();
+        if (!services.some(s => s.id === id)) {
+          services.push({
+            id,
+            name: title,
+            description: '',
+            page: '/' + filePath,
+            icon: 'fa-globe',
+            color: '#D6A755',
+            locked: false,
+            lockMessage: '',
+            order: services.length
+          });
+          await saveServicesFile(services, svcSha, `Auto-add service: ${id} (via /addpage)`);
+        }
+      } catch (svcErr) {
+        // Kalau gagal tambah ke services.json, file HTML tetap dibuat.
+        // User bisa manual /addservice nanti.
+        console.error('Gagal auto-add service:', svcErr.message);
+      }
+
+      return `✅ <b>Halaman HTML Dibuat & Ditambahkan ke Portal</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\n━━━━━━━━━━━━━━\nHalaman punya tombol "Kembali ke Portal".\n✅ Layanan juga otomatis masuk ke services.json\nEdit langsung di repo GitHub atau Vercel dashboard.\nGunakan /seticon ${id} buat ganti icon layanan.\nGunakan /seticon ${id} <kode-warna> buat ganti warna.`;
     }
 
     case '/delpage': {
@@ -799,7 +831,21 @@ async function handleCommand(text, message, botToken) {
       if (existing === null) return `⚠️ File <code>${filePath}</code> tidak ditemukan.`;
 
       await deleteProjectFile(filePath, sha, `Hapus halaman: ${name}.html`);
-      return `🗑️ File <code>${filePath}</code> berhasil dihapus dari repo.`;
+
+      // Auto-remove service entry dari services.json
+      try {
+        const { services, sha: svcSha } = await getServicesFile();
+        const svcIdx = services.findIndex(s => s.id === name);
+        if (svcIdx !== -1) {
+          services.splice(svcIdx, 1);
+          services.forEach((s, i) => { s.order = i; });
+          await saveServicesFile(services, svcSha, `Auto-remove service: ${name} (via /delpage)`);
+        }
+      } catch (svcErr) {
+        console.error('Gagal auto-remove service:', svcErr.message);
+      }
+
+      return `🗑️ File <code>${filePath}</code> berhasil dihapus dari repo.\n✅ Layanan juga dihapus dari services.json (jika ada).`;
     }
 
     case '/listfiles': {
@@ -876,6 +922,76 @@ async function handleCommand(text, message, botToken) {
     case '/setphoto': {
       const photoUrlArg = args[0] ? args[0].trim() : null;
       return await setBotProfilePhoto(botToken, message, photoUrlArg);
+    }
+
+    case '/delfile':
+    case '/deletefile': {
+      // Format: /delfile path/ke/file.ext
+      const filePath = restArgs.trim();
+      if (!filePath) {
+        return (
+          '📝 <b>Format:</b>\n<code>/delfile path/ke/file.ext</code>\n\n' +
+          'Contoh:\n' +
+          '• <code>/delfile capcut.html</code>\n' +
+          '• <code>/delfile api/capcut.js</code>\n' +
+          '• <code>/delfile assets/icons/alightmotion.png</code>\n\n' +
+          'Ketik /listfiles buat lihat daftar file di repo.'
+        );
+      }
+
+      const cleanPath = filePath.replace(/^\/+/, '');
+      const { content: existing, sha: fileSha } = await getProjectFile(cleanPath);
+      if (existing === null) {
+        return `⚠️ File <code>${escapeHtml(cleanPath)}</code> tidak ditemukan di repo.\n\nKetik /listfiles buat lihat daftar.`;
+      }
+
+      await deleteProjectFile(cleanPath, fileSha, `Hapus file: ${cleanPath} (via /delfile)`);
+
+      // Kalau file HTML di root, auto-remove dari services.json juga
+      const isHtmlRoot = cleanPath.endsWith('.html') && !cleanPath.includes('/');
+      let autoRemoveMsg = '';
+      if (isHtmlRoot) {
+        try {
+          const svcId = cleanPath.replace(/\.html$/i, '');
+          const { services, sha: svcSha } = await getServicesFile();
+          const svcIdx = services.findIndex(s => s.id === svcId);
+          if (svcIdx !== -1) {
+            services.splice(svcIdx, 1);
+            services.forEach((s, i) => { s.order = i; });
+            await saveServicesFile(services, svcSha, `Auto-remove service: ${svcId} (via /delfile)`);
+            autoRemoveMsg = '\n✅ Layanan juga dihapus dari services.json';
+          }
+        } catch (svcErr) {
+          console.error('Gagal auto-remove service:', svcErr.message);
+        }
+      }
+
+      return (
+        `🗑️ <b>File Berhasil Dihapus</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `File  : <code>${escapeHtml(cleanPath)}</code>${autoRemoveMsg}\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `File tidak bisa di-undo. Kalau salah hapus, upload ulang dengan /uploadfile.`
+      );
+    }
+
+    case '/uploadfile':
+    case '/upload': {
+      // Tangani di handler() atas (butuh akses message.document).
+      // Tapi kalau user ketik tanpa file, kasih panduan.
+      if (!message.document) {
+        return (
+          '📝 <b>Cara Upload File ke GitHub</b>\n\n' +
+          '1. Kirim file (dokumen) dengan caption <code>/uploadfile [path]</code>\n\n' +
+          'Contoh:\n' +
+          '• <code>/uploadfile</code> → upload ke root repo (contoh: capcut.html)\n' +
+          '• <code>/uploadfile api/</code> → upload ke folder api/ (contoh: api/capcut.js)\n' +
+          '• <code>/uploadfile assets/icons/</code> → upload ke folder assets/icons/\n\n' +
+          'File akan langsung replace kalau sudah ada di repo.\n' +
+          'Cek file dengan /listfiles.'
+        );
+      }
+      return '';
     }
 
     default:
@@ -974,6 +1090,112 @@ async function handleRestore(message, botToken) {
     return `✅ <b>Konfigurasi website berhasil direstore dari backup.</b>`;
   } catch (e) {
     return `❌ Gagal restore: <code>${escapeHtml(e.message)}</code>`;
+  }
+}
+
+// /uploadfile — upload file dokumen dari Telegram ke repo GitHub.
+// Format: kirim file dengan caption /uploadfile [path]
+// Contoh: /uploadfile api/  → file ditaruh di api/
+//         /uploadfile       → file ditaruh di root
+async function handleUploadFile(message, botToken) {
+  try {
+    if (!message.document) {
+      return '⚠️ Kirim file (dokumen) dengan caption <code>/uploadfile [path]</code>';
+    }
+
+    const caption = (message.caption || message.text || '').trim();
+    const parts = caption.split(/\s+/);
+    // /uploadfile [optional-path]
+    const destDir = parts.slice(1).join(' ').trim() || '';
+
+    const fileName = message.document.file_name || 'unnamed';
+    const mime = message.document.mime_type || '';
+
+    // Download file dari Telegram
+    const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${message.document.file_id}`);
+    const fileData = await fileRes.json();
+    if (!fileData.ok || !fileData.result?.file_path) {
+      throw new Error(`Gagal ambil file dari Telegram: ${fileData.description || 'Unknown error'}`);
+    }
+
+    const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+    const dlRes = await fetch(downloadUrl);
+    if (!dlRes.ok) throw new Error('Gagal mengunduh file dari server Telegram.');
+    const arrayBuffer = await dlRes.arrayBuffer();
+
+    // Tentukan path tujuan di repo
+    let filePath;
+    if (destDir) {
+      // Bersihkan path: hapus leading slash, pastikan ada trailing slash
+      const cleanDir = destDir.replace(/^\/+/, '').replace(/\/*$/, '');
+      filePath = `${cleanDir}/${fileName}`;
+    } else {
+      filePath = fileName;
+    }
+
+    // Cek apakah file sudah ada (untuk sha replace)
+    let existingSha = null;
+    try {
+      const existing = await getProjectFile(filePath);
+      existingSha = existing.sha;
+    } catch {
+      // Belum ada file sebelumnya
+    }
+
+    // Tentukan apakah file binary atau teks
+    const isTextFile = /\.(js|html|css|json|md|txt|xml|svg|yml|yaml|sh|env|gitignore|ts|jsx|tsx|py|php|rb|go|rs|java|c|cpp|h|sql|csv|ini|conf|toml)$/i.test(fileName) ||
+                       /^text\//.test(mime) ||
+                       mime === 'application/json';
+
+    if (isTextFile) {
+      // Upload sebagai teks
+      const textContent = new TextDecoder('utf-8').decode(arrayBuffer);
+      await saveProjectFile(filePath, textContent, existingSha, `Upload file: ${filePath} (via Telegram)`);
+    } else {
+      // Upload sebagai binary (base64)
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      await saveProjectBinaryFile(filePath, base64, existingSha, `Upload file: ${filePath} (via Telegram)`);
+    }
+
+    // Kalau file HTML di root, tanyakan apakah mau auto-add ke services.json
+    const isHtmlRoot = filePath.endsWith('.html') && !filePath.includes('/');
+    let autoServiceMsg = '';
+    if (isHtmlRoot) {
+      try {
+        const serviceName = fileName.replace(/\.html$/i, '');
+        const serviceId = serviceName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        const { services, sha: svcSha } = await getServicesFile();
+        if (!services.some(s => s.id === serviceId)) {
+          services.push({
+            id: serviceId,
+            name: serviceName.charAt(0).toUpperCase() + serviceName.slice(1),
+            description: '',
+            page: '/' + filePath,
+            icon: 'fa-globe',
+            color: '#D6A755',
+            locked: false,
+            lockMessage: '',
+            order: services.length
+          });
+          await saveServicesFile(services, svcSha, `Auto-add service: ${serviceId} (via /uploadfile)`);
+          autoServiceMsg = '\n✅ Layanan otomatis ditambahkan ke portal (services.json)';
+        }
+      } catch (svcErr) {
+        console.error('Gagal auto-add service:', svcErr.message);
+      }
+    }
+
+    return (
+      `✅ <b>File Berhasil Diupload ke GitHub</b>\n` +
+      `━━━━━━━━━━━━━━\n` +
+      `File  : <code>${escapeHtml(filePath)}</code>\n` +
+      `Ukuran: ${(message.document.file_size || 0).toLocaleString()} bytes\n` +
+      `Tipe  : ${isTextFile ? 'Teks' : 'Binary'}${autoServiceMsg}\n` +
+      `━━━━━━━━━━━━━━\n` +
+      `URL   : <code>${buildRawGithubUrl(filePath)}</code>`
+    );
+  } catch (e) {
+    return `❌ Gagal upload file: <code>${escapeHtml(e.message)}</code>`;
   }
 }
 
@@ -1126,6 +1348,10 @@ function helpText() {
     `/addservice /delservice /lockservice /unlockservice /listservice /orderservice\n\n` +
     `<b>📂 File API & HTML</b>\n` +
     `/addapi /delapi /addpage /delpage /listfiles /projectinfo\n\n` +
+    `<b>📤 Upload File ke GitHub</b>\n` +
+    `/uploadfile — kirim file + caption /uploadfile [path]\n\n` +
+    `<b>🗑️ Hapus File dari GitHub</b>\n` +
+    `/delfile path/ke/file.ext\n\n` +
     `<b>📣 Pengumuman (30)</b>\n` +
     `/setannouncement\n\n` +
     `<b>🤖 Profil Bot</b>\n` +
