@@ -26,7 +26,13 @@ import {
   saveWarningFile,
   getSiteConfig,
   saveSiteConfig,
-  DEFAULT_WARNING
+  DEFAULT_WARNING,
+  getServicesFile,
+  saveServicesFile,
+  getProjectFile,
+  saveProjectFile,
+  deleteProjectFile,
+  listProjectFiles
 } from './_lib/github.js';
 
 // Banner gambar buat mempercantik bot. Bisa diganti ke URL gambar sendiri
@@ -493,6 +499,253 @@ async function handleCommand(text, message, botToken) {
       return `🔄 <b>Semua konfigurasi tampilan website dikembalikan ke default.</b>\nToken seller & daftar admin TIDAK terhapus.`;
     }
 
+    // ================= KELOLA LAYANAN (SERVICES / SUPERAPP) =================
+    case '/addservice': {
+      // Format: /addservice Nama | Deskripsi | /page.html | fa-icon | #color
+      const parts = restArgs.split('|').map(s => s.trim());
+      if (parts.length < 3) {
+        return (
+          '📝 <b>Format:</b>\n<code>/addservice Nama | Deskripsi | /halaman.html | fa-icon | #warna</code>\n\n' +
+          'Contoh:\n<code>/addservice Capcut Pro | Edit video premium | /capcut.html | fa-scissors | #00E5FF</code>\n\n' +
+          'Icon: nama FontAwesome tanpa prefix (contoh: fa-bolt, fa-scissors)\n' +
+          'Warna: kode hex (opsional, default kuning)'
+        );
+      }
+      const [name, description, page, icon, color] = parts;
+      if (!name || !page) return '❌ Nama dan halaman wajib diisi.';
+
+      const { services, sha } = await getServicesFile();
+      const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+      if (services.some(s => s.id === id)) {
+        return `⚠️ Layanan dengan ID <code>${id}</code> sudah ada.\nPakai /delservice dulu kalau mau replace.`;
+      }
+
+      services.push({
+        id,
+        name,
+        description: description || '',
+        page,
+        icon: icon || 'fa-globe',
+        color: isHexColor(color) ? color : '#FFD028',
+        locked: false,
+        lockMessage: '',
+        order: services.length
+      });
+
+      await saveServicesFile(services, sha, `Tambah layanan: ${name}`);
+      return (
+        `✅ <b>Layanan Berhasil Ditambahkan</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `ID    : <code>${id}</code>\n` +
+        `Nama  : ${escapeHtml(name)}\n` +
+        `Halaman: <code>${escapeHtml(page)}</code>\n` +
+        `Icon  : ${icon || 'fa-globe'}\n` +
+        `Warna : ${isHexColor(color) ? color : '#FFD028'}\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `Layanan sudah tampil di portal.`
+      );
+    }
+
+    case '/delservice': {
+      const id = args[0]?.toLowerCase();
+      if (!id) return '📝 Format:\n<code>/delservice alight-motion-premium</code>\n\nKetik /listservice buat lihat ID.';
+
+      const { services, sha } = await getServicesFile();
+      const idx = services.findIndex(s => s.id === id);
+      if (idx === -1) return `⚠️ Layanan <code>${id}</code> tidak ditemukan.\n\nKetik /listservice buat lihat daftar.`;
+
+      const removed = services.splice(idx, 1)[0];
+      // Reorder
+      services.forEach((s, i) => { s.order = i; });
+      await saveServicesFile(services, sha, `Hapus layanan: ${removed.name}`);
+      return `🗑️ Layanan <b>${escapeHtml(removed.name)}</b> berhasil dihapus dari portal.`;
+    }
+
+    case '/lockservice': {
+      const id = args[0]?.toLowerCase();
+      if (!id) return '📝 Format:\n<code>/lockservice alight-motion-premium [pesan kunci]</code>';
+      const lockMsg = args.slice(1).join(' ').trim() || 'Layanan ini sedang dikunci sementara.';
+
+      const { services, sha } = await getServicesFile();
+      const svc = services.find(s => s.id === id);
+      if (!svc) return `⚠️ Layanan <code>${id}</code> tidak ditemukan.`;
+
+      svc.locked = true;
+      svc.lockMessage = lockMsg;
+      await saveServicesFile(services, sha, `Kunci layanan: ${svc.name}`);
+      return (
+        `🔒 <b>Layanan Dikunci</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `Layanan: ${escapeHtml(svc.name)}\n` +
+        `Pesan  : ${escapeHtml(lockMsg)}\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `Pengunjung tidak bisa mengakses layanan ini sampai di-unlock.`
+      );
+    }
+
+    case '/unlockservice': {
+      const id = args[0]?.toLowerCase();
+      if (!id) return '📝 Format:\n<code>/unlockservice alight-motion-premium</code>';
+
+      const { services, sha } = await getServicesFile();
+      const svc = services.find(s => s.id === id);
+      if (!svc) return `⚠️ Layanan <code>${id}</code> tidak ditemukan.`;
+
+      svc.locked = false;
+      svc.lockMessage = '';
+      await saveServicesFile(services, sha, `Buka kunci layanan: ${svc.name}`);
+      return `🔓 Layanan <b>${escapeHtml(svc.name)}</b> berhasil dibuka kuncinya.`;
+    }
+
+    case '/listservice': {
+      const { services } = await getServicesFile();
+      if (services.length === 0) return '📋 Belum ada layanan terdaftar.';
+
+      const lines = services.map((s, i) => {
+        const lock = s.locked ? ' 🔒' : '';
+        const colorDot = s.color || '#FFD028';
+        return `${i + 1}. <code>${s.id}</code>${lock}\n   📛 ${escapeHtml(s.name)}\n   📄 ${escapeHtml(s.description || '-')}\n   🎨 <code>${colorDot}</code> | ${s.icon || 'fa-globe'}`;
+      });
+      return `📋 <b>Daftar Layanan</b> (${services.length})\n━━━━━━━━━━━━━━\n${lines.join('\n\n')}`;
+    }
+
+    case '/orderservice': {
+      const id = args[0]?.toLowerCase();
+      const pos = parseInt(args[1], 10);
+      if (!id || isNaN(pos)) return '📝 Format:\n<code>/orderservice alight-motion-premium 0</code>\n\n0 = paling atas.';
+
+      const { services, sha } = await getServicesFile();
+      const idx = services.findIndex(s => s.id === id);
+      if (idx === -1) return `⚠️ Layanan <code>${id}</code> tidak ditemukan.`;
+
+      const [item] = services.splice(idx, 1);
+      services.splice(pos, 0, item);
+      services.forEach((s, i) => { s.order = i; });
+      await saveServicesFile(services, sha, `Ubah urutan layanan: ${item.name} ke posisi ${pos}`);
+      return `✅ Layanan <b>${escapeHtml(item.name)}</b> dipindah ke posisi <b>${pos}</b>.`;
+    }
+
+
+
+    // ================= INFO REPO =================
+    case '/projectinfo': {
+      const tokensPath = process.env.GITHUB_TOKENS_PATH || '(belum diset)';
+      const projectPath = process.env.GITHUB_PROJECT_PATH || '(pakai repo yang sama dengan tokens)';
+      return (
+        `📦 <b>Info Repo GitHub</b>\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `<b>Data Files:</b>\n<code>${escapeHtml(tokensPath)}</code>\n\n` +
+        `<b>Code Files (API + HTML):</b>\n<code>${escapeHtml(projectPath)}</code>\n\n` +
+        `━━━━━━━━━━━━━━\n` +
+        `Kalau repo kode beda dengan repo data,\n` +
+        `set <code>GITHUB_PROJECT_PATH = username/repo/branch</code>\n` +
+        `di Environment Variables Vercel.`
+      );
+    }
+
+    // ================= KELOLA FILE API & HTML (SUPERAPP) =================
+    case '/addapi': {
+      // Format: /addapi nama [template]
+      const name = (args[0] || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const template = (args[1] || 'blank').toLowerCase();
+      if (!name) return '📝 Format:\n<code>/addapi nama [blank|proxy|json]</code>\n\nContoh: <code>/addapi capcut proxy</code>\n\nTemplate:\n• <code>blank</code> — handler kosong\n• <code>proxy</code> — proxy (teruskan request ke URL)\n• <code>json</code> — return JSON sederhana';
+
+      const filePath = `api/${name}.js`;
+      const { content: existing, sha } = await getProjectFile(filePath);
+      if (existing !== null) return `⚠️ File <code>${filePath}</code> sudah ada.\nPakai /delapi dulu kalau mau replace.`;
+
+      const templates = {
+        blank: `// Auto-generated via Telegram bot. Edit sesuai kebutuhan.\nexport default async function handler(req, res) {\n  return res.status(200).json({ success: true, message: 'Hello from ${name}' });\n}\n`,
+        proxy: `// Auto-generated via Telegram bot. Proxy endpoint.\nexport default async function handler(req, res) {\n  const targetUrl = req.query.url || '';\n  if (!targetUrl) return res.status(400).json({ error: 'Missing url param' });\n  try {\n    const r = await fetch(targetUrl);\n    const data = await r.text();\n    return res.status(r.status).send(data);\n  } catch (e) {\n    return res.status(500).json({ error: e.message });\n  }\n}\n`,
+        json: `// Auto-generated via Telegram bot. JSON response.\nexport default async function handler(req, res) {\n  return res.status(200).json({\n    success: true,\n    service: '${name}',\n    data: {}\n  });\n}\n`
+      };
+
+      const code = templates[template] || templates.blank;
+      await saveProjectFile(filePath, code, null, `Tambah API: ${name} (${template})`);
+      return `✅ <b>File API Dibuat</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nTemplate: ${template}\n━━━━━━━━━━━━━━\nFile sudah ada di repo GitHub.\nKalau Vercel auto-deploy dari repo ini, file langsung aktif.`;
+    }
+
+    case '/delapi': {
+      const name = (args[0] || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      if (!name) return '📝 Format:\n<code>/delapi nama</code>\n\nContoh: <code>/delapi capcut</code>';
+
+      const filePath = `api/${name}.js`;
+      const { content: existing, sha } = await getProjectFile(filePath);
+      if (existing === null) return `⚠️ File <code>${filePath}</code> tidak ditemukan.`;
+
+      await deleteProjectFile(filePath, sha, `Hapus API: ${name}`);
+      return `🗑️ File <code>${filePath}</code> berhasil dihapus dari repo.`;
+    }
+
+    case '/addpage': {
+      // Format: /addpage nama [judul]
+      const name = (args[0] || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      const title = args.slice(1).join(' ').trim() || name;
+      if (!name) return '📝 Format:\n<code>/addpage nama [Judul Tab]</code>\n\nContoh: <code>/addpage capcut Capcut Pro</code>\n\nFile akan dibuat: <code>nama.html</code>';
+
+      const filePath = `${name}.html`;
+      const { content: existing, sha } = await getProjectFile(filePath);
+      if (existing !== null) return `⚠️ File <code>${filePath}</code> sudah ada.\nPakai /delpage dulu kalau mau replace.`;
+
+      const safeTitle = escapeHtml(title);
+      const safeName = escapeHtml(name);
+      const html = [
+        '<!DOCTYPE html>',
+        '<html lang="id">',
+        '<head>',
+        '  <meta charset="UTF-8">',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '  <title>' + safeTitle + '</title>',
+        '  <script src="https://cdn.tailwindcss.com"><\/script>',
+        '  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">',
+        '  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">',
+        '  <style>',
+        '    body { font-family: \'Plus Jakarta Sans\', sans-serif; background: #0F1015; color: #fff; }',
+        '    .nb-shadow { box-shadow: 4px 4px 0px 0px #000; }',
+        '  <\/style>',
+        '<\/head>',
+        '<body class="min-h-screen flex flex-col items-center justify-center p-4">',
+        '  <a href="/" class="mb-4 inline-flex items-center gap-2 bg-slate-800 border-2 border-black rounded-xl px-4 py-2 text-xs font-bold text-slate-300 nb-shadow">',
+        '    <i class="fas fa-arrow-left"><\/i> Kembali ke Portal',
+        '  <\/a>',
+        '  <div class="bg-slate-800 border-2 border-black rounded-2xl p-8 nb-shadow max-w-md text-center">',
+        '    <h1 class="text-2xl font-extrabold mb-2">' + safeTitle + '<\/h1>',
+        '    <p class="text-sm text-slate-400">Halaman ini belum dikustomisasi. Edit file <code>' + safeName + '.html</code> di repo GitHub.</p>',
+        '  <\/div>',
+        '<\/body>',
+        '<\/html>',
+        ''
+      ].join('\n');
+
+      await saveProjectFile(filePath, html, null, `Tambah halaman: ${name}.html`);
+      return `✅ <b>Halaman HTML Dibuat</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\n━━━━━━━━━━━━━━\nHalaman punya tombol "Kembali ke Portal".\nEdit langsung di repo GitHub atau Vercel dashboard.`;
+    }
+
+    case '/delpage': {
+      const name = (args[0] || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      if (!name) return '📝 Format:\n<code>/delpage nama</code>\n\nContoh: <code>/delpage capcut</code>';
+
+      const filePath = `${name}.html`;
+      const { content: existing, sha } = await getProjectFile(filePath);
+      if (existing === null) return `⚠️ File <code>${filePath}</code> tidak ditemukan.`;
+
+      await deleteProjectFile(filePath, sha, `Hapus halaman: ${name}.html`);
+      return `🗑️ File <code>${filePath}</code> berhasil dihapus dari repo.`;
+    }
+
+    case '/listfiles': {
+      try {
+        const rootFiles = await listProjectFiles('');
+        const apiFiles = await listProjectFiles('api');
+        const rootHtml = rootFiles.filter(f => f.name.endsWith('.html')).map(f => `📄 <code>${f.name}</code>`).join('\n') || '(kosong)';
+        const apiJs = apiFiles.filter(f => f.name.endsWith('.js')).map(f => `⚙️ <code>api/${f.name}</code>`).join('\n') || '(kosong)';
+        return `📂 <b>File di Repo GitHub</b>\n━━━━━━━━━━━━━━\n<b>Halaman HTML:</b>\n${rootHtml}\n\n<b>API Endpoints:</b>\n${apiJs}`;
+      } catch (e) {
+        return `❌ Gagal list file: <code>${escapeHtml(e.message)}</code>`;
+      }
+    }
+
     // ================= [28-29] BACKUP / RESTORE =================
     case '/backup': {
       const { warning } = await getSiteConfig();
@@ -764,6 +1017,10 @@ function helpText() {
     `/getconfig /resetconfig\n\n` +
     `<b>💾 Backup/Restore (28-29)</b>\n` +
     `/backup /restore\n\n` +
+    `<b>🧩 Layanan / Portal Superapp</b>\n` +
+    `/addservice /delservice /lockservice /unlockservice /listservice /orderservice\n\n` +
+    `<b>📂 File API & HTML</b>\n` +
+    `/addapi /delapi /addpage /delpage /listfiles /projectinfo\n\n` +
     `<b>📣 Pengumuman (30)</b>\n` +
     `/setannouncement\n\n` +
     `<b>🤖 Profil Bot</b>\n` +
