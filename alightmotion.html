@@ -26,7 +26,8 @@
                     },
                     fontFamily: {
                         sans: ['Plus Jakarta Sans', 'sans-serif'],
-                        heading: ['Space Grotesk', 'sans-serif']
+                        heading: ['Space Grotesk', 'sans-serif'],
+                        brand: ['Outfit', 'sans-serif']
                     }
                 }
             }
@@ -39,7 +40,7 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Space+Grotesk:wght@600;700;800&family=Outfit:wght@600;700;800;900&display=swap" rel="stylesheet">
 
     <style>
         :root {
@@ -231,7 +232,7 @@
         }
     </style>
 </head>
-<body class="min-h-screen text-white flex flex-col justify-between items-center p-4 sm:p-6 relative">
+<body class="min-h-screen text-white flex flex-col items-center p-4 sm:p-6 relative">
     <div class="grain"></div>
 
     <!-- OVERLAY MODE MAINTENANCE (dikontrol lewat /maintenance di Telegram bot) -->
@@ -266,16 +267,8 @@
 
     <!-- HEADER / BRANDING -->
     <header class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-3 mb-4 text-center relative z-10">
-        <div class="inline-flex items-center gap-3 bg-darkcard border-2.5 border-black rounded-2xl p-3 px-5 nb-shadow mb-2 relative">
-            <div id="brand-logo-box" class="relative w-11 h-11 bg-black border-2 border-black rounded-xl flex items-center justify-center shadow-[2px_2px_0px_0px_var(--color-accent)]">
-                <span id="brand-logo-letter" class="font-heading font-extrabold text-xl" style="color: var(--color-primary);">C</span>
-                <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-neonGreen rounded-full pulse-live border border-black"></span>
-            </div>
-            <div class="relative flex items-center font-heading font-extrabold text-2xl tracking-tight text-white">
-                <span id="brand-name-text">Cyronime</span>
-                <span id="brand-badge-text" class="bg-cyberYellow text-black border-2 border-black rounded-lg px-2 py-0.5 ml-2 text-xs font-black shadow-[2px_2px_0px_0px_#000]">PRO</span>
-            </div>
-        </div>
+        <h1 id="brand-name-text" class="font-brand font-extrabold text-3xl sm:text-4xl tracking-wide text-white mb-1.5">Cyronime</h1>
+        <span id="brand-badge-text" class="hidden"></span>
         <p id="brand-tagline-text" class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Layanan Aktivasi Premium</p>
 
         <!-- STOK (dikontrol lewat /setstock di Telegram bot) -->
@@ -286,7 +279,7 @@
     </header>
 
     <!-- MAIN CONTAINER CARD -->
-    <main class="w-full max-w-md md:max-w-lg lg:max-w-xl my-auto space-y-4 z-10">
+    <main class="w-full max-w-md md:max-w-lg lg:max-w-xl mt-1 space-y-4 z-10">
 
         <!-- MODE TAB SWITCHER -->
         <div class="grid grid-cols-3 gap-1.5 bg-darkcard p-1.5 border-2.5 border-black rounded-2xl nb-shadow">
