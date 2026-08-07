@@ -822,9 +822,9 @@ async function handleCommand(text, message, botToken) {
       // Auto-add service entry ke services.json supaya langsung tampil di portal
       try {
         const { services, sha: svcSha } = await getServicesFile();
-        if (!services.some(s => s.id === id)) {
+        if (!services.some(s => s.id === name)) {
           services.push({
-            id,
+            id: name,
             name: title,
             description: '',
             page: '/' + filePath,
@@ -834,7 +834,7 @@ async function handleCommand(text, message, botToken) {
             lockMessage: '',
             order: services.length
           });
-          await saveServicesFile(services, svcSha, `Auto-add service: ${id} (via /addpage)`);
+          await saveServicesFile(services, svcSha, `Auto-add service: ${name} (via /addpage)`);
         }
       } catch (svcErr) {
         console.error('Gagal auto-add service:', svcErr.message);
