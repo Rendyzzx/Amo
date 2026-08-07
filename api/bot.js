@@ -840,7 +840,7 @@ async function handleCommand(text, message, botToken) {
         console.error('Gagal auto-add service:', svcErr.message);
       }
 
-      return `✅ <b>Halaman HTML Dibuat & Ditambahkan ke Portal</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\nSumber: ${usedCustomFile ? '📤 File upload' : '📝 Template kosong'}\n━━━━━━━━━━━━━━\n✅ Layanan otomatis masuk ke services.json\n${usedCustomFile ? 'Isi halaman dari file yang kamu kirim.' : 'Edit langsung di repo GitHub atau Vercel dashboard.'}\nGunakan /seticon ${id} buat ganti icon layanan.`;
+      return `✅ <b>Halaman HTML Dibuat & Ditambahkan ke Portal</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\nSumber: ${usedCustomFile ? '📤 File upload' : '📝 Template kosong'}\n━━━━━━━━━━━━━━\n✅ Layanan otomatis masuk ke services.json\n${usedCustomFile ? 'Isi halaman dari file yang kamu kirim.' : 'Edit langsung di repo GitHub atau Vercel dashboard.'}\nGunakan /seticon ${name} buat ganti icon layanan.`;
     }
 
     case '/delpage': {
