@@ -172,18 +172,20 @@ const DEFAULT_WARNING = {
 
   // Konfigurasi tampilan & konten website, dikontrol via bot Telegram
   site: {
-    brandName: 'ALIGHT',
+    brandName: 'Cyronime',
     brandBadge: 'PRO',
     tagline: 'Layanan Aktivasi Premium',
-    footerText: 'Created by <strong>AKIRA</strong>',
-    pageTitle: 'Alight Motion Premium — By Akira',
+    footerText: 'Copyright by <strong>Akirax</strong>',
+    pageTitle: 'Cyronime — Portal Layanan Premium',
     faviconUrl: '',
     logoUrl: '',
+    logoLetter: '',
+    heroImage: '',
 
     // Tema warna (CSS variables — lihat index.html)
-    primaryColor: '#FFD028',
-    accentColor: '#00E676',
-    bgColor: '#0F1015',
+    primaryColor: '#D6A755',
+    accentColor: '#5C8AA6',
+    bgColor: '#0B0C10',
 
     // Kontak
     waNumber: '6281249578370',
@@ -243,7 +245,7 @@ async function saveFreemiumFile(visitors, sha, commitMessage) {
 // ---- Wrapper khusus services.json (daftar layanan untuk portal superapp) ----
 // Format services.json:
 //   { "services": [ { "id": "alightmotion", "name": "Alight Motion", "description": "...",
-//      "icon": "fa-bolt", "color": "#FFD028", "page": "/alightmotion.html",
+//      "icon": "fa-bolt", "color": "#D6A755", "page": "/alightmotion.html",
 //      "locked": false, "lockMessage": "", "order": 0 } ] }
 
 const DEFAULT_SERVICES = {
@@ -253,7 +255,7 @@ const DEFAULT_SERVICES = {
       name: 'Alight Motion Premium',
       description: 'Layanan aktivasi premium Alight Motion',
       icon: 'fa-bolt',
-      color: '#FFD028',
+      color: '#D6A755',
       page: '/alightmotion.html',
       locked: false,
       lockMessage: '',
@@ -369,6 +371,33 @@ async function listProjectFiles(dirPath) {
   return resp.map(item => ({ name: item.name, path: item.path, type: item.type, size: item.size }));
 }
 
+async function saveProjectBinaryFile(filePath, base64Content, sha, commitMessage) {
+  const { owner, repo, branch } = parseProjectPath();
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+  const body = {
+    message: commitMessage || `Upload ${filePath}`,
+    content: base64Content,
+    branch
+  };
+  if (sha) body.sha = sha;
+  const r = await fetch(apiUrl, {
+    method: 'PUT',
+    headers: { ...ghHeaders(), 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const errBody = await r.text();
+    throw new Error(`Gagal upload ${filePath} ke GitHub: ${errBody}`);
+  }
+  const data = await r.json();
+  return data.content.sha;
+}
+
+function buildRawGithubUrl(filePath) {
+  const { owner, repo, branch } = parseProjectPath();
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+}
+
 // Alias semantik — dipakai di command-command "kelola tampilan website"
 // supaya kodenya lebih jelas dibaca (secara teknis file & isinya sama).
 const getSiteConfig = getWarningFile;
@@ -389,5 +418,7 @@ export {
   getProjectFile,
   saveProjectFile,
   deleteProjectFile,
-  listProjectFiles
+  listProjectFiles,
+  saveProjectBinaryFile,
+  buildRawGithubUrl
 };
