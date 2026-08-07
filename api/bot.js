@@ -40,7 +40,7 @@ import {
 // Banner gambar buat mempercantik bot. Bisa diganti ke URL gambar sendiri
 // (logo/banner brand kamu) kapan aja, tinggal ubah BANNER_IMAGE_URL.
 const BANNER_IMAGE_URL =
-  'https://placehold.co/900x420/0f0f1a/f5c518/png?text=Alight+Motion+Premium%0AControl+Panel&font=montserrat';
+  'https://files.catbox.moe/kfjmi3.jpg';
 
 const VALID_MODES = ['pribadi', 'generate', 'buyer'];
 
