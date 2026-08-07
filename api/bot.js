@@ -40,7 +40,7 @@ import {
 // Banner gambar buat mempercantik bot. Bisa diganti ke URL gambar sendiri
 // (logo/banner brand kamu) kapan aja, tinggal ubah BANNER_IMAGE_URL.
 const BANNER_IMAGE_URL =
-  'https://files.catbox.moe/kfjmi3.jpg';
+  'https://placehold.co/900x420/0f0f1a/f5c518/png?text=Alight+Motion+Premium%0AControl+Panel&font=montserrat';
 
 const VALID_MODES = ['pribadi', 'generate', 'buyer'];
 
@@ -756,45 +756,68 @@ async function handleCommand(text, message, botToken) {
 
     case '/addpage': {
       // Format: /addpage nama [judul]
+      // Bisa diketik biasa (template kosong), atau sambil:
+      //   - reply ke file dengan /addpage nama Judul
+      //   - kirim file dengan caption /addpage nama Judul
       const name = (args[0] || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
       const title = args.slice(1).join(' ').trim() || name;
-      if (!name) return '📝 Format:\n<code>/addpage nama [Judul Tab]</code>\n\nContoh: <code>/addpage capcut Capcut Pro</code>\n\nFile akan dibuat: <code>nama.html</code>';
+      if (!name) return '📝 <b>Format:</b>\n<code>/addpage nama [Judul]</code>\n\nContoh: <code>/addpage nonton-anime Nonton Anime</code>\n\n<b>💡 Upload file langsung:</b>\n1. Reply ke file dengan <code>/addpage nama Judul</code>\n2. Atau kirim file dengan caption <code>/addpage nama Judul</code>\n\nKalau tanpa file, template kosong akan dibuat.\nFile akan dibuat: <code>nama.html</code>';
 
       const filePath = `${name}.html`;
       const { content: existing, sha } = await getProjectFile(filePath);
       if (existing !== null) return `⚠️ File <code>${filePath}</code> sudah ada.\nPakai /delpage dulu kalau mau replace.`;
 
-      const safeTitle = escapeHtml(title);
-      const safeName = escapeHtml(name);
-      const html = [
-        '<!DOCTYPE html>',
-        '<html lang="id">',
-        '<head>',
-        '  <meta charset="UTF-8">',
-        '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
-        '  <title>' + safeTitle + '</title>',
-        '  <script src="https://cdn.tailwindcss.com"><\/script>',
-        '  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">',
-        '  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">',
-        '  <style>',
-        '    body { font-family: \'Plus Jakarta Sans\', sans-serif; background: #0F1015; color: #fff; }',
-        '    .nb-shadow { box-shadow: 4px 4px 0px 0px #000; }',
-        '  <\/style>',
-        '<\/head>',
-        '<body class="min-h-screen flex flex-col items-center justify-center p-4">',
-        '  <a href="/" class="mb-4 inline-flex items-center gap-2 bg-slate-800 border-2 border-black rounded-xl px-4 py-2 text-xs font-bold text-slate-300 nb-shadow">',
-        '    <i class="fas fa-arrow-left"><\/i> Kembali ke Portal',
-        '  <\/a>',
-        '  <div class="bg-slate-800 border-2 border-black rounded-2xl p-8 nb-shadow max-w-md text-center">',
-        '    <h1 class="text-2xl font-extrabold mb-2">' + safeTitle + '<\/h1>',
-        '    <p class="text-sm text-slate-400">Halaman ini belum dikustomisasi. Edit file <code>' + safeName + '.html</code> di repo GitHub.</p>',
-        '  <\/div>',
-        '<\/body>',
-        '<\/html>',
-        ''
-      ].join('\n');
+      // Cek apakah ada file yang di-reply atau di-caption
+      const attachedDoc = message.document || (message.reply_to_message && message.reply_to_message.document);
+      let html;
+      let usedCustomFile = false;
 
-      await saveProjectFile(filePath, html, null, `Tambah halaman: ${name}.html`);
+      if (attachedDoc) {
+        // Download file dari Telegram
+        const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${attachedDoc.file_id}`);
+        const fileData = await fileRes.json();
+        if (!fileData.ok || !fileData.result?.file_path) {
+          throw new Error(`Gagal ambil file dari Telegram: ${fileData.description || 'Unknown error'}`);
+        }
+        const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+        const dlRes = await fetch(downloadUrl);
+        if (!dlRes.ok) throw new Error('Gagal mengunduh file dari server Telegram.');
+        html = await dlRes.text();
+        usedCustomFile = true;
+      } else {
+        // Template default kosong
+        const safeTitle = escapeHtml(title);
+        const safeName = escapeHtml(name);
+        html = [
+          '<!DOCTYPE html>',
+          '<html lang="id">',
+          '<head>',
+          '  <meta charset="UTF-8">',
+          '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+          '  <title>' + safeTitle + '</title>',
+          '  <script src="https://cdn.tailwindcss.com"><\/script>',
+          '  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">',
+          '  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">',
+          '  <style>',
+          '    body { font-family: \'Plus Jakarta Sans\', sans-serif; background: #0F1015; color: #fff; }',
+          '    .nb-shadow { box-shadow: 4px 4px 0px 0px #000; }',
+          '  <\/style>',
+          '<\/head>',
+          '<body class="min-h-screen flex flex-col items-center justify-center p-4">',
+          '  <a href="/" class="mb-4 inline-flex items-center gap-2 bg-slate-800 border-2 border-black rounded-xl px-4 py-2 text-xs font-bold text-slate-300 nb-shadow">',
+          '    <i class="fas fa-arrow-left"><\/i> Kembali ke Portal',
+          '  <\/a>',
+          '  <div class="bg-slate-800 border-2 border-black rounded-2xl p-8 nb-shadow max-w-md text-center">',
+          '    <h1 class="text-2xl font-extrabold mb-2">' + safeTitle + '<\/h1>',
+          '    <p class="text-sm text-slate-400">Halaman ini belum dikustomisasi. Edit file <code>' + safeName + '.html</code> di repo GitHub.</p>',
+          '  <\/div>',
+          '<\/body>',
+          '<\/html>',
+          ''
+        ].join('\n');
+      }
+
+      await saveProjectFile(filePath, html, null, `Tambah halaman: ${name}.html${usedCustomFile ? ' (dari file upload)' : ''}`);
 
       // Auto-add service entry ke services.json supaya langsung tampil di portal
       try {
@@ -814,12 +837,10 @@ async function handleCommand(text, message, botToken) {
           await saveServicesFile(services, svcSha, `Auto-add service: ${id} (via /addpage)`);
         }
       } catch (svcErr) {
-        // Kalau gagal tambah ke services.json, file HTML tetap dibuat.
-        // User bisa manual /addservice nanti.
         console.error('Gagal auto-add service:', svcErr.message);
       }
 
-      return `✅ <b>Halaman HTML Dibuat & Ditambahkan ke Portal</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\n━━━━━━━━━━━━━━\nHalaman punya tombol "Kembali ke Portal".\n✅ Layanan juga otomatis masuk ke services.json\nEdit langsung di repo GitHub atau Vercel dashboard.\nGunakan /seticon ${id} buat ganti icon layanan.\nGunakan /seticon ${id} <kode-warna> buat ganti warna.`;
+      return `✅ <b>Halaman HTML Dibuat & Ditambahkan ke Portal</b>\n━━━━━━━━━━━━━━\nFile  : <code>${filePath}</code>\nJudul : ${escapeHtml(title)}\nSumber: ${usedCustomFile ? '📤 File upload' : '📝 Template kosong'}\n━━━━━━━━━━━━━━\n✅ Layanan otomatis masuk ke services.json\n${usedCustomFile ? 'Isi halaman dari file yang kamu kirim.' : 'Edit langsung di repo GitHub atau Vercel dashboard.'}\nGunakan /seticon ${id} buat ganti icon layanan.`;
     }
 
     case '/delpage': {
